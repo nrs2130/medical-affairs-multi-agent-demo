@@ -1,0 +1,33 @@
+# Core Dependencies
+semantic-kernel>=1.0.0
+azure-ai-openai>=1.0.0
+openai>=1.0.0
+
+# Agent-to-Agent Protocol
+a2a-sdk>=0.1.0
+
+# Web Framework
+streamlit>=1.28.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# HTTP Client
+httpx>=0.25.0
+
+# PDF Generation
+reportlab>=4.0.0
+pillow>=10.0.0
+
+# Database
+sqlite3  # Built-in to Python
+
+# Data Handling
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Jupyter Notebook
+jupyter>=1.0.0
+ipykernel>=6.25.0
+
+# Utilities
+python-dotenv>=1.0.0
