@@ -34,6 +34,9 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 
+# GRADE Evidence Assessment
+from grade_evidence_agent import GRADEEvidenceAgent
+
 # Page configuration
 st.set_page_config(
     page_title="Medical Affairs AI Assistant",
@@ -148,7 +151,18 @@ AGENT_INFO = {
             "Assesses study quality and bias",
             "Synthesizes findings across studies",
             "Identifies evidence gaps",
-            "Notes: Could integrate GRADE methodology for formal guidelines"
+            "Notes: Replaced by GRADE Evidence Agent in workflow"
+        ]
+    },
+    "GRADE Evidence Agent": {
+        "icon": "⊕⊕⊕⊕",
+        "description": "Official GRADE methodology for systematic evidence quality assessment (GRADE Working Group standards).",
+        "capabilities": [
+            "Assigns evidence quality: HIGH ⊕⊕⊕⊕, MODERATE ⊕⊕⊕○, LOW ⊕⊕○○, VERY_LOW ⊕○○○",
+            "Evaluates 5 downgrade factors (risk of bias, inconsistency, indirectness, imprecision, publication bias)",
+            "Evaluates 3 upgrade factors (large effect, dose-response, confounding reduction)",
+            "Generates certainty ratings and recommendation strength",
+            "Integrated into Full MI Workflow for automatic evidence grading"
         ]
     },
     "Medical Information Agent": {
@@ -718,11 +732,12 @@ class MedicalCRMIntegration:
 crm = MedicalCRMIntegration()
 
 async def run_full_mi_workflow(query: str, a2a_base: str, kernel) -> dict:
-    """Run the full Medical Affairs workflow"""
+    """Run the full Medical Affairs workflow with GRADE evidence assessment"""
     results = {
         "query": query,
         "timestamp": datetime.now().isoformat(),
         "evidence": "",
+        "grade_assessment": None,
         "mi_response": "",
         "compliance": {}
     }
@@ -730,13 +745,65 @@ async def run_full_mi_workflow(query: str, a2a_base: str, kernel) -> dict:
     # Step 1: Literature Scout
     results["evidence"] = await call_literature_scout_agent(query, a2a_base)
     
-    # Step 2: MI Agent formats response
+    # Step 2: GRADE Evidence Assessment
+    # Use AI to extract study parameters from evidence for GRADE analysis
+    grade_extraction_prompt = f"""Analyze this evidence and extract key study parameters for GRADE assessment.
+
+EVIDENCE:
+{results["evidence"]}
+
+Extract and return ONLY a JSON object with these fields:
+{{
+  "study_design": "RCT" | "observational" | "case_series" | "unclear",
+  "sample_size": <number or null>,
+  "has_serious_limitations": true/false,
+  "has_inconsistency": true/false,
+  "has_indirectness": true/false,
+  "has_imprecision": true/false,
+  "has_publication_bias": true/false,
+  "large_effect": true/false (RR >= 2 or <= 0.5),
+  "dose_response": true/false,
+  "confounding_reduces_effect": true/false
+}}
+
+Be conservative - if unclear, default to false for positive factors and true for negative factors."""
+    
+    try:
+        grade_params_result = await kernel.invoke_prompt(grade_extraction_prompt, arguments=KernelArguments())
+        grade_params = json.loads(str(grade_params_result))
+        
+        # Initialize GRADE agent and assess evidence
+        grade_agent = GRADEEvidenceAgent()
+        grade_assessment = grade_agent.assess_evidence(
+            study_design=grade_params.get("study_design", "unclear"),
+            sample_size=grade_params.get("sample_size"),
+            serious_limitations=grade_params.get("has_serious_limitations", False),
+            inconsistency=grade_params.get("has_inconsistency", False),
+            indirectness=grade_params.get("has_indirectness", False),
+            imprecision=grade_params.get("has_imprecision", False),
+            publication_bias=grade_params.get("has_publication_bias", False),
+            large_effect=grade_params.get("large_effect", False),
+            dose_response_gradient=grade_params.get("dose_response", False),
+            plausible_confounding=grade_params.get("confounding_reduces_effect", False)
+        )
+        results["grade_assessment"] = grade_assessment
+    except Exception as e:
+        # If GRADE analysis fails, continue without it
+        results["grade_assessment"] = None
+        results["grade_error"] = str(e)
+    
+    # Step 3: MI Agent formats response (now includes GRADE quality if available)
+    grade_context = ""
+    if results["grade_assessment"]:
+        grade_context = f"\n\nEVIDENCE QUALITY (GRADE): {results['grade_assessment'].final_quality.value}\n{results['grade_assessment'].certainty_rating}\n"
+    
     mi_prompt = f"""You are MedicalInformationAgent. Create a compliant, fair-balanced response to this HCP inquiry.
 
 QUERY: {query}
 
 EVIDENCE BASE:
 {results["evidence"]}
+{grade_context}
 
 Format as a professional Medical Information response:
 - Lead with approved labeling guidance
@@ -745,13 +812,14 @@ Format as a professional Medical Information response:
 - Maintain fair balance
 - Professional, non-promotional tone
 - Max 200 words
+{"- Mention the GRADE evidence quality level if provided above" if grade_context else ""}
 
 Response:"""
     
     mi_response_result = await kernel.invoke_prompt(mi_prompt, arguments=KernelArguments())
     results["mi_response"] = str(mi_response_result)
     
-    # Step 3: Compliance Guard validates
+    # Step 4: Compliance Guard validates
     results["compliance"] = await run_compliance_check(
         results["evidence"],
         results["mi_response"],
@@ -876,8 +944,8 @@ def main():
         1️⃣ **Literature Scout** 📚  
         → Retrieves evidence from PubMed, FDA labels
         
-        2️⃣ **Evidence Summarizer** 📊  
-        → Grades quality, synthesizes findings
+        2️⃣ **GRADE Evidence Assessment** ⊕⊕⊕⊕  
+        → Grades evidence quality (HIGH/MODERATE/LOW/VERY_LOW)
         
         3️⃣ **Medical Information Agent** 📝  
         → Formats compliant MI response
@@ -1049,8 +1117,9 @@ def main():
         st.markdown("""
         Run the complete multi-agent workflow:
         1. **Literature Scout** retrieves evidence
-        2. **MI Agent** formats compliant response
-        3. **Compliance Guard** validates for regulatory risks
+        2. **GRADE Agent** assesses evidence quality (HIGH/MODERATE/LOW/VERY_LOW)
+        3. **MI Agent** formats compliant response
+        4. **Compliance Guard** validates for regulatory risks
         """)
         
         # Initialize session state for MI query
@@ -1087,7 +1156,7 @@ def main():
                 
                 try:
                     # Run full workflow
-                    progress_bar.progress(10, text="📚 Step 1/3: Literature Scout searching...")
+                    progress_bar.progress(10, text="📚 Step 1/4: Literature Scout searching...")
                     results = asyncio.run(run_full_mi_workflow(
                         mi_query,
                         st.session_state.a2a_base,
@@ -1130,24 +1199,69 @@ def main():
             with st.expander("📚 Step 1: Evidence from Literature Scout", expanded=True):
                 st.markdown(results["evidence"])
             
+            # GRADE Assessment
+            if results.get("grade_assessment"):
+                grade_assessment = results["grade_assessment"]
+                with st.expander(f"⊕ Step 2: GRADE Evidence Quality Assessment - {grade_assessment.final_quality.value}", expanded=True):
+                    # Quality level with emoji indicators
+                    quality_symbols = {
+                        "HIGH": "⊕⊕⊕⊕",
+                        "MODERATE": "⊕⊕⊕○",
+                        "LOW": "⊕⊕○○",
+                        "VERY_LOW": "⊕○○○"
+                    }
+                    quality_colors = {
+                        "HIGH": "#28a745",
+                        "MODERATE": "#17a2b8", 
+                        "LOW": "#ffc107",
+                        "VERY_LOW": "#dc3545"
+                    }
+                    
+                    quality = grade_assessment.final_quality.value
+                    st.markdown(f"""
+                    <div style="background-color: {quality_colors.get(quality, '#f0f2f6')}20; 
+                                padding: 1rem; border-radius: 0.5rem; border-left: 4px solid {quality_colors.get(quality, '#0078D4')};">
+                        <h3 style="margin: 0; color: {quality_colors.get(quality, '#0078D4')};">
+                            {quality_symbols.get(quality, "")} Evidence Quality: {quality}
+                        </h3>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.write("")
+                    st.write(f"**Certainty Rating:** {grade_assessment.certainty_rating}")
+                    st.write(f"**Recommendation Strength:** {grade_assessment.recommendation_strength}")
+                    
+                    # Show evidence summary
+                    st.markdown("**Evidence Summary:**")
+                    st.markdown(grade_assessment.evidence_summary)
+            elif results.get("grade_error"):
+                with st.expander("⊕ Step 2: GRADE Evidence Quality Assessment - Unable to assess", expanded=False):
+                    st.warning(f"GRADE assessment could not be completed: {results['grade_error']}")
+            
             # MI Response
-            with st.expander("📝 Step 2: Medical Information Response", expanded=True):
+            with st.expander("📝 Step 3: Medical Information Response", expanded=True):
                 st.markdown(results["mi_response"])
             
             # Compliance
-            with st.expander("⚠️ Step 3: Compliance Assessment", expanded=True):
+            with st.expander("⚠️ Step 4: Compliance Assessment", expanded=True):
                 display_compliance_result(results["compliance"])
             
             # Summary
             st.divider()
             st.subheader("📊 Workflow Summary")
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Evidence Retrieved", "✓")
             with col2:
-                st.metric("MI Response Generated", "✓")
+                if results.get("grade_assessment"):
+                    grade_quality = results["grade_assessment"].final_quality.value
+                    st.metric("GRADE Quality", grade_quality)
+                else:
+                    st.metric("GRADE Quality", "N/A")
             with col3:
+                st.metric("MI Response Generated", "✓")
+            with col4:
                 risk = results["compliance"].get("risk_level", "UNKNOWN")
                 st.metric("Compliance Risk", risk)
             
