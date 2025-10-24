@@ -142,12 +142,13 @@ AGENT_INFO = {
     },
     "Evidence Summarizer": {
         "icon": "📊",
-        "description": "Produces structured evidence tables and grades strength of evidence using GRADE methodology.",
+        "description": "Produces structured evidence tables and assesses quality of clinical evidence.",
         "capabilities": [
             "Creates evidence tables from literature",
-            "Assigns evidence quality grades",
+            "Assesses study quality and bias",
             "Synthesizes findings across studies",
-            "Identifies evidence gaps"
+            "Identifies evidence gaps",
+            "Notes: Could integrate GRADE methodology for formal guidelines"
         ]
     },
     "Medical Information Agent": {
@@ -162,12 +163,13 @@ AGENT_INFO = {
     },
     "Compliance Guard": {
         "icon": "⚠️",
-        "description": "Validates responses for regulatory compliance, flags risks, and ensures adherence to guidelines.",
+        "description": "Validates responses for FDA/regulatory compliance, flags risks, and ensures adherence to medical affairs standards.",
         "capabilities": [
-            "Detects off-label content",
+            "Detects off-label content (not in FDA label)",
             "Identifies promotional language",
-            "Checks fair balance requirements",
-            "Assigns risk levels (LOW/MEDIUM/HIGH)"
+            "Checks fair balance requirements (21 CFR 202.1)",
+            "Assigns regulatory risk levels (LOW/MEDIUM/HIGH)",
+            "Ensures adherence to approved product labeling"
         ]
     },
     "PDF Letter Generator": {
@@ -238,30 +240,56 @@ async def call_literature_scout_agent(query: str, a2a_base: str) -> str:
         return data.get('result', {}).get('parts', [{}])[0].get('text', json.dumps(data, indent=2))
 
 async def run_compliance_check(evidence: str, response: str, kernel) -> dict:
-    """Run Compliance Guard validation"""
-    compliance_prompt = f"""You are ComplianceGuardAgent for pharmaceutical Medical Affairs.
+    """Run Compliance Guard validation with strict FDA/regulatory standards"""
+    compliance_prompt = f"""You are ComplianceGuardAgent for pharmaceutical Medical Affairs with STRICT FDA regulatory oversight.
 
-Analyze this Medical Information response for regulatory compliance issues:
+CRITICAL RULES - AUTOMATIC HIGH RISK:
+1. ANY use not explicitly stated in FDA label = OFF-LABEL = HIGH RISK
+2. ANY pediatric use outside approved age range = HIGH RISK
+3. ANY contraindicated population mentioned = HIGH RISK
+4. Comparative claims ("better than", "superior to") without head-to-head trials = HIGH RISK
+5. Promotional language ("best", "excellent", "great") = HIGH RISK
+6. Missing safety information when discussing efficacy = MEDIUM-HIGH RISK
 
-EVIDENCE BASE:
+EVIDENCE BASE (FDA-Approved Labeling):
 {evidence}
 
-MI RESPONSE TO HCP:
+PROPOSED MI RESPONSE TO HCP:
 {response}
 
-Identify any:
-1. **Off-label content** (uses not in approved labeling)
-2. **Promotional language** (overstates benefits, minimizes risks)
-3. **Missing fair balance** (safety not proportional to efficacy)
-4. **Citation issues** (claims without proper references)
+COMPLIANCE ANALYSIS REQUIRED:
 
-Return JSON format:
+**Step 1: Check for OFF-LABEL content**
+- Does response discuss ANY indication not in the evidence?
+- Does response discuss ANY population (age, organ impairment) not approved?
+- Does response discuss ANY dosing not in approved labeling?
+→ If YES to any: AUTOMATIC HIGH RISK
+
+**Step 2: Check for PROMOTIONAL language**
+- Words like: "best", "superior", "excellent", "great", "proven", "guaranteed"
+- Comparative claims without proper citations
+- Overstating benefits or minimizing risks
+→ If YES: HIGH RISK
+
+**Step 3: Check FAIR BALANCE**
+- If efficacy mentioned, is safety equally prominent?
+- Are contraindications/warnings present?
+→ If NO: MEDIUM-HIGH RISK
+
+**Step 4: Citation check**
+- Are claims supported by evidence provided?
+- Are references to "studies" or "data" properly cited?
+→ If NO: MEDIUM RISK
+
+RETURN STRICT JSON FORMAT:
 {{
   "risk_level": "LOW|MEDIUM|HIGH",
-  "flags": ["list of specific issues"],
+  "flags": ["specific issue 1", "specific issue 2", ...],
   "requires_medical_review": true/false,
-  "recommendations": ["suggested edits"]
+  "recommendations": ["specific edit 1", "specific edit 2", ...]
 }}
+
+BE EXTREMELY STRICT. When in doubt, escalate to HIGHER risk level. Patient safety and regulatory compliance are paramount.
 """
     result = await kernel.invoke_prompt(compliance_prompt, arguments=KernelArguments())
     try:
