@@ -49,6 +49,13 @@ This system demonstrates how pharmaceutical companies can use AI agents to trans
 - **Persistent Storage**: SQLite database + JSON export for complete audit trail
 - **Veeva Medical CRM Simulation**: Models real-world pharmaceutical CRM workflows
 - **Analytics Dashboard**: Query categories, risk distribution, HCP interaction history
+
+### 🔍 Azure AI Foundry Integration (NEW!)
+- **Agent Registry**: Register and track all agents in Azure AI Foundry
+- **Observability**: Real-time monitoring with Azure Monitor and Application Insights
+- **Performance Metrics**: Track latency, success rates, error counts per agent
+- **Interaction Tracing**: Complete audit trail of all agent-to-agent communications
+- **Production Ready**: Export to Azure AI Foundry for enterprise deployment
 - **SQL Query Support**: Advanced analytics on historical data
 
 ### 🎨 Streamlit Web Interface
@@ -453,6 +460,59 @@ CREATE TABLE mi_interactions (
 - [ ] Track compliance flag accuracy
 - [ ] Alert on high-risk patterns
 - [ ] Dashboard for Medical Affairs leadership
+
+### Azure AI Foundry Integration
+- [ ] Register agents in Azure AI Foundry agent registry
+- [ ] Enable Azure Monitor tracing for all agent interactions
+- [ ] Set up Application Insights dashboards
+- [ ] Configure alerting for agent errors or performance issues
+- [ ] Implement evaluation metrics (quality scores, compliance accuracy)
+- [ ] Use AI Foundry evaluation framework for continuous improvement
+
+---
+
+## 🔍 Azure AI Foundry Integration
+
+The system includes optional integration with **Azure AI Foundry** (formerly Azure AI Studio) for enterprise-grade agent management and monitoring.
+
+### Features
+
+- **Agent Registry**: Centralized catalog of all agents with metadata
+- **Performance Tracking**: Real-time metrics (latency, success rate, error count)
+- **Interaction Tracing**: Complete audit trail across multi-agent workflows
+- **Azure Monitor Integration**: Stream telemetry to Application Insights
+- **Evaluation Framework**: Assess agent quality over time
+- **Production Dashboards**: Visual analytics in Azure portal
+
+### Setup (Production)
+
+1. **Install Azure AI packages**:
+   ```bash
+   pip install azure-ai-projects azure-identity azure-monitor-opentelemetry
+   ```
+
+2. **Set environment variables**:
+   ```powershell
+   $env:AZURE_AI_PROJECT_CONNECTION_STRING="<your-connection-string>"
+   $env:AZURE_AI_PROJECT_NAME="medical-affairs-agents"
+   ```
+
+3. **Run the AI Foundry integration cells** in the Jupyter notebook (Section 7b)
+
+4. **View in Azure Portal**:
+   - Navigate to Azure AI Foundry
+   - View registered agents in the agent registry
+   - Access performance dashboards
+   - Set up alerts for anomalies
+
+### Demo Mode
+
+For demonstration purposes, the system uses a **local registry** that:
+- Saves agent metadata to `./ai_foundry_registry/agent_registry.json`
+- Tracks interactions in `./ai_foundry_registry/interactions.json`
+- Exports data in Azure AI Foundry-compatible format
+
+This provides the same tracking capabilities without requiring Azure infrastructure.
 
 ---
 

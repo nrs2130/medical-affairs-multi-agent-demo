@@ -52,6 +52,10 @@ crm_data/
 *.db
 *.db-journal
 
+# AI Foundry Registry (Local agent tracking data)
+ai_foundry_registry/
+*.foundry.json
+
 # Generated PDFs (May contain proprietary content)
 mi_responses/
 *.pdf
