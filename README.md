@@ -26,6 +26,24 @@ This system demonstrates how pharmaceutical companies can use AI agents to trans
 
 ---
 
+## 🆕 Recent Enhancements (October 2025)
+
+### Enhanced GRADE Evidence Assessment
+- **Detailed Quality Explanations**: GRADE agent now provides comprehensive rationale for quality ratings
+- **Initial Quality Reasoning**: Explains why study design determines starting quality (RCT=HIGH, Observational=LOW, etc.)
+- **Quality Adjustment Transparency**: Shows all downgrades ↓ and upgrades ↑ with specific reasons
+- **Plain-Language Interpretation**: "What This Means" section translates GRADE ratings for stakeholders
+- **Unified Assessment View**: Side-by-side GRADE quality + FDA compliance risk cards
+
+### Real-Time A2A Communication Logging
+- **Protocol Visibility**: See actual HTTP requests, agent discovery, and message exchange in real-time
+- **4-Step Logging**: Captures Agent Discovery → Agent Card → Message Send → Response Received
+- **Educational Showcase**: Perfect for demos showing how A2A agents communicate
+- **Debugging Support**: Message IDs, context IDs, and timestamps for troubleshooting
+- **See Details**: Check `A2A_LOGGING_FEATURE.md` for complete documentation
+
+---
+
 ## ✨ Key Features
 
 ### 🤖 Multi-Agent Architecture

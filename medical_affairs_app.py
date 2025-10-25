@@ -228,37 +228,94 @@ def init_semantic_kernel(azure_endpoint: str, azure_key: str, deployment: str, a
     )
     return kernel
 
-async def call_literature_scout_agent(query: str, a2a_base: str) -> str:
-    """Call the Literature Scout Agent via A2A protocol"""
+async def call_literature_scout_agent(query: str, a2a_base: str, communication_log: list = None) -> str:
+    """Call the Literature Scout Agent via A2A protocol with optional communication logging"""
     timeout = httpx.Timeout(30.0, connect=5.0)
     
     async with httpx.AsyncClient(timeout=timeout) as client:
+        # Step 1: Get agent card
+        if communication_log is not None:
+            communication_log.append({
+                "step": "Agent Discovery",
+                "action": "GET Agent Card",
+                "url": f"{a2a_base}/.well-known/agent.json",
+                "timestamp": datetime.now().isoformat()
+            })
+        
         resolver = A2ACardResolver(httpx_client=client, base_url=a2a_base)
         agent_card = await resolver.get_agent_card()
+        
+        if communication_log is not None:
+            communication_log.append({
+                "step": "Agent Discovery",
+                "action": "Agent Card Received",
+                "agent_name": agent_card.name,
+                "agent_description": agent_card.description,
+                "timestamp": datetime.now().isoformat()
+            })
+        
+        # Step 2: Create A2A client
         a2a_client = A2AClient(httpx_client=client, agent_card=agent_card)
+        
+        # Step 3: Send query message
+        message_id = uuid4().hex
+        context_id = f'streamlit-session-{datetime.now().strftime("%Y%m%d-%H%M%S")}'
         
         req = SendMessageRequest(
             id=str(uuid4()),
             params=MessageSendParams(
                 message={
-                    'messageId': uuid4().hex,
+                    'messageId': message_id,
                     'role': 'user',
                     'parts': [{'text': query}],
-                    'contextId': f'streamlit-session-{datetime.now().strftime("%Y%m%d-%H%M%S")}',
+                    'contextId': context_id,
                 }
             ),
         )
         
+        if communication_log is not None:
+            communication_log.append({
+                "step": "A2A Message Send",
+                "action": "POST /message",
+                "message_id": message_id,
+                "context_id": context_id,
+                "query_preview": query[:100] + "..." if len(query) > 100 else query,
+                "timestamp": datetime.now().isoformat()
+            })
+        
+        # Step 4: Receive response
         resp = await a2a_client.send_message(req)
         data = resp.model_dump(mode='json', exclude_none=True)
+        
+        if communication_log is not None:
+            result_text = data.get('result', {}).get('parts', [{}])[0].get('text', '')
+            communication_log.append({
+                "step": "A2A Response Received",
+                "action": "Evidence Retrieved",
+                "response_length": len(result_text),
+                "response_preview": result_text[:150] + "..." if len(result_text) > 150 else result_text,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         return data.get('result', {}).get('parts', [{}])[0].get('text', json.dumps(data, indent=2))
 
-async def run_compliance_check(evidence: str, response: str, kernel) -> dict:
-    """Run Compliance Guard validation with strict FDA/regulatory standards"""
+async def run_compliance_check(evidence: str, response: str, kernel, grade_quality: str = None) -> dict:
+    """Run Compliance Guard validation with strict FDA/regulatory standards, informed by GRADE evidence quality"""
+    
+    grade_context = ""
+    if grade_quality:
+        grade_context = f"""
+**EVIDENCE QUALITY CONTEXT (GRADE):** {grade_quality}
+Note: HIGH quality evidence from off-label use is still HIGH RISK for compliance.
+Evidence quality ≠ regulatory compliance.
+"""
+    
     compliance_prompt = f"""You are ComplianceGuardAgent for pharmaceutical Medical Affairs with STRICT FDA regulatory oversight.
 
+{grade_context}
+
 CRITICAL RULES - AUTOMATIC HIGH RISK:
-1. ANY use not explicitly stated in FDA label = OFF-LABEL = HIGH RISK
+1. ANY use not explicitly stated in FDA label = OFF-LABEL = HIGH RISK (even if HIGH quality evidence)
 2. ANY pediatric use outside approved age range = HIGH RISK
 3. ANY contraindicated population mentioned = HIGH RISK
 4. Comparative claims ("better than", "superior to") without head-to-head trials = HIGH RISK
@@ -295,12 +352,17 @@ COMPLIANCE ANALYSIS REQUIRED:
 - Are references to "studies" or "data" properly cited?
 → If NO: MEDIUM RISK
 
-RETURN STRICT JSON FORMAT:
+**Step 5: Evidence quality acknowledgment**
+- If GRADE quality is HIGH/MODERATE, mention this as a positive factor
+- But HIGH quality evidence for off-label use is still HIGH RISK
+
+RETURN STRICT JSON FORMAT with ALL fields:
 {{
   "risk_level": "LOW|MEDIUM|HIGH",
   "flags": ["specific issue 1", "specific issue 2", ...],
   "requires_medical_review": true/false,
-  "recommendations": ["specific edit 1", "specific edit 2", ...]
+  "recommendations": ["specific edit 1", "specific edit 2", ...],
+  "positive_factors": ["what was done correctly", ...]
 }}
 
 BE EXTREMELY STRICT. When in doubt, escalate to HIGHER risk level. Patient safety and regulatory compliance are paramount.
@@ -308,18 +370,27 @@ BE EXTREMELY STRICT. When in doubt, escalate to HIGHER risk level. Patient safet
     result = await kernel.invoke_prompt(compliance_prompt, arguments=KernelArguments())
     try:
         compliance_result = json.loads(str(result))
+        # Ensure all required fields exist
+        if "positive_factors" not in compliance_result:
+            compliance_result["positive_factors"] = []
+        if "recommendations" not in compliance_result:
+            compliance_result["recommendations"] = []
+        if "flags" not in compliance_result:
+            compliance_result["flags"] = []
     except:
         compliance_result = {
             "risk_level": "MEDIUM",
             "flags": [str(result)],
             "requires_medical_review": True,
-            "recommendations": []
+            "recommendations": ["Unable to parse compliance analysis - manual review required"],
+            "positive_factors": []
         }
     return compliance_result
 
 def generate_mi_letter_pdf(query: str, evidence: str, response: str, 
-                           compliance_result: dict, output_filename: str) -> str:
-    """Generate a professional Medical Information response letter in PDF format"""
+                           compliance_result: dict, output_filename: str, 
+                           grade_assessment = None) -> str:
+    """Generate a professional Medical Information response letter in PDF format with GRADE assessment"""
     
     # Create PDF document
     doc = SimpleDocTemplate(output_filename, pagesize=letter,
@@ -399,6 +470,38 @@ def generate_mi_letter_pdf(query: str, evidence: str, response: str,
         if para.strip():
             story.append(Paragraph(para.strip(), body_style))
     story.append(Spacer(1, 0.15*inch))
+    
+    # GRADE Evidence Quality Assessment (if available)
+    if grade_assessment:
+        story.append(Paragraph("<b>Evidence Quality Assessment (GRADE):</b>", section_header_style))
+        
+        grade_quality = grade_assessment.final_quality.value
+        grade_symbols = {
+            "HIGH": "⊕⊕⊕⊕",
+            "MODERATE": "⊕⊕⊕○",
+            "LOW": "⊕⊕○○",
+            "VERY_LOW": "⊕○○○"
+        }
+        grade_symbol = grade_symbols.get(grade_quality, "?")
+        
+        grade_data = [
+            ['Quality Level:', f"{grade_symbol} {grade_quality}"],
+            ['Certainty:', grade_assessment.certainty_rating],
+            ['Recommendation:', grade_assessment.recommendation_strength]
+        ]
+        
+        grade_table = Table(grade_data, colWidths=[2*inch, 4.5*inch])
+        grade_table.setStyle(TableStyle([
+            ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('TEXTCOLOR', (0,0), (0,-1), colors.HexColor('#003087')),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#E8F4F8')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#17a2b8')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#17a2b8')),
+        ]))
+        story.append(grade_table)
+        story.append(Spacer(1, 0.15*inch))
     
     # Compliance status
     risk_level = compliance_result.get('risk_level', 'UNKNOWN')
@@ -535,6 +638,11 @@ class MedicalCRMIntegration:
                 evidence_sources TEXT,  -- JSON array as string
                 pdf_attachment TEXT,
                 
+                -- GRADE Evidence Assessment
+                grade_quality TEXT,
+                grade_certainty TEXT,
+                grade_recommendation TEXT,
+                
                 -- Compliance
                 compliance_risk_level TEXT,
                 requires_follow_up BOOLEAN,
@@ -601,9 +709,10 @@ class MedicalCRMIntegration:
                 (record_id, timestamp, interaction_type, channel, mi_reference_number,
                  hcp_name, hcp_specialty, hcp_institution,
                  query_text, query_category, products_mentioned,
-                 pdf_attachment, compliance_risk_level, requires_follow_up,
+                 pdf_attachment, grade_quality, grade_certainty, grade_recommendation,
+                 compliance_risk_level, requires_follow_up,
                  approved_by, system_generated, ai_assisted)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 record['record_id'], record['timestamp'], 
                 record.get('interaction_type', 'Medical Information Request'),
@@ -612,7 +721,11 @@ class MedicalCRMIntegration:
                 record.get('hcp_name'), record.get('hcp_specialty'), record.get('hcp_institution'),
                 record.get('query_text'), record.get('query_category'),
                 json.dumps(record.get('products_mentioned', [])),
-                record.get('pdf_attachment'), record.get('compliance_risk'),
+                record.get('pdf_attachment'),
+                record.get('grade_quality', 'Not Assessed'),
+                record.get('grade_certainty', 'N/A'),
+                record.get('grade_recommendation', 'N/A'),
+                record.get('compliance_risk'),
                 record.get('requires_follow_up', False),
                 record.get('status'), True, True
             ))
@@ -631,8 +744,18 @@ class MedicalCRMIntegration:
             pass  # Silent fail for demo
     
     def log_interaction(self, hcp_info: dict, query: str, response: str, 
-                       compliance_result: dict, ref_number: str, pdf_path: str = None) -> dict:
-        """Log MI interaction to all storage backends"""
+                       compliance_result: dict, ref_number: str, pdf_path: str = None, 
+                       grade_assessment = None) -> dict:
+        """Log MI interaction to all storage backends with GRADE assessment"""
+        
+        # Extract GRADE quality if available
+        grade_quality = "Not Assessed"
+        grade_certainty = "N/A"
+        grade_recommendation = "N/A"
+        if grade_assessment:
+            grade_quality = grade_assessment.final_quality.value
+            grade_certainty = grade_assessment.certainty_rating
+            grade_recommendation = grade_assessment.recommendation_strength
         
         crm_record = {
             "record_id": f"CRM-{datetime.now().strftime('%Y%m%d%H%M%S')}",
@@ -646,6 +769,9 @@ class MedicalCRMIntegration:
             "query_text": query,
             "query_category": self._categorize_query(query),
             "products_mentioned": self._extract_products(query),
+            "grade_quality": grade_quality,
+            "grade_certainty": grade_certainty,
+            "grade_recommendation": grade_recommendation,
             "compliance_risk": compliance_result.get("risk_level", "UNKNOWN"),
             "requires_follow_up": compliance_result.get("requires_medical_review", False),
             "pdf_attachment": pdf_path or "Not Generated",
@@ -731,21 +857,67 @@ class MedicalCRMIntegration:
 # Initialize CRM with persistent storage
 crm = MedicalCRMIntegration()
 
-async def run_full_mi_workflow(query: str, a2a_base: str, kernel) -> dict:
-    """Run the full Medical Affairs workflow with GRADE evidence assessment"""
+async def run_full_mi_workflow(query: str, a2a_base: str, kernel, status_placeholder=None, a2a_log_container=None) -> dict:
+    """Run the full Medical Affairs workflow with GRADE evidence assessment and real-time status updates"""
     results = {
         "query": query,
         "timestamp": datetime.now().isoformat(),
         "evidence": "",
         "grade_assessment": None,
         "mi_response": "",
-        "compliance": {}
+        "compliance": {},
+        "a2a_communication_log": []
     }
     
-    # Step 1: Literature Scout
-    results["evidence"] = await call_literature_scout_agent(query, a2a_base)
+    # Step 1: Literature Scout (with A2A logging)
+    if status_placeholder:
+        status_placeholder.info("🔄 **Step 1/4:** Calling Literature Scout Agent (A2A)...")
+    
+    # Call with communication logging
+    results["evidence"] = await call_literature_scout_agent(
+        query, 
+        a2a_base, 
+        communication_log=results["a2a_communication_log"]
+    )
+    
+    # Display A2A communication log in real-time
+    if a2a_log_container and results["a2a_communication_log"]:
+        with a2a_log_container:
+            with st.expander("🔗 A2A Agent Communication Log (Click to expand)", expanded=True):
+                st.markdown("**Real-time A2A Protocol Communication:**")
+                for idx, log_entry in enumerate(results["a2a_communication_log"], 1):
+                    if log_entry["step"] == "Agent Discovery":
+                        if "Agent Card Received" in log_entry["action"]:
+                            st.success(f"**{idx}. {log_entry['step']}** - {log_entry['action']}")
+                            st.json({
+                                "agent_name": log_entry.get("agent_name"),
+                                "agent_description": log_entry.get("agent_description")
+                            })
+                        else:
+                            st.info(f"**{idx}. {log_entry['step']}** - {log_entry['action']}")
+                            st.code(log_entry.get("url"), language="text")
+                    
+                    elif log_entry["step"] == "A2A Message Send":
+                        st.info(f"**{idx}. {log_entry['step']}** - {log_entry['action']}")
+                        st.json({
+                            "message_id": log_entry.get("message_id"),
+                            "context_id": log_entry.get("context_id"),
+                            "query": log_entry.get("query_preview")
+                        })
+                    
+                    elif log_entry["step"] == "A2A Response Received":
+                        st.success(f"**{idx}. {log_entry['step']}** - {log_entry['action']}")
+                        st.json({
+                            "response_length_chars": log_entry.get("response_length"),
+                            "preview": log_entry.get("response_preview")
+                        })
+    
+    if status_placeholder:
+        status_placeholder.success("✅ **Step 1/4:** Literature evidence retrieved from A2A agent")
     
     # Step 2: GRADE Evidence Assessment
+    if status_placeholder:
+        status_placeholder.info("🔄 **Step 2/4:** Analyzing evidence quality with GRADE methodology...")
     # Use AI to extract study parameters from evidence for GRADE analysis
     grade_extraction_prompt = f"""Analyze this evidence and extract key study parameters for GRADE assessment.
 
@@ -754,19 +926,19 @@ EVIDENCE:
 
 Extract and return ONLY a JSON object with these fields:
 {{
-  "study_design": "RCT" | "observational" | "case_series" | "unclear",
+  "study_design": "rct" | "observational" | "case_series" | "expert_opinion" | "unclear",
   "sample_size": <number or null>,
-  "has_serious_limitations": true/false,
+  "risk_of_bias": "low" | "moderate" | "high" | "very_high",
   "has_inconsistency": true/false,
   "has_indirectness": true/false,
   "has_imprecision": true/false,
   "has_publication_bias": true/false,
-  "large_effect": true/false (RR >= 2 or <= 0.5),
+  "large_effect": true/false,
   "dose_response": true/false,
   "confounding_reduces_effect": true/false
 }}
 
-Be conservative - if unclear, default to false for positive factors and true for negative factors."""
+Be conservative - if unclear, use "moderate" for risk_of_bias, false for positive factors, true for negative factors."""
     
     try:
         grade_params_result = await kernel.invoke_prompt(grade_extraction_prompt, arguments=KernelArguments())
@@ -777,22 +949,27 @@ Be conservative - if unclear, default to false for positive factors and true for
         grade_assessment = grade_agent.assess_evidence(
             study_design=grade_params.get("study_design", "unclear"),
             sample_size=grade_params.get("sample_size"),
-            serious_limitations=grade_params.get("has_serious_limitations", False),
-            inconsistency=grade_params.get("has_inconsistency", False),
-            indirectness=grade_params.get("has_indirectness", False),
-            imprecision=grade_params.get("has_imprecision", False),
-            publication_bias=grade_params.get("has_publication_bias", False),
-            large_effect=grade_params.get("large_effect", False),
-            dose_response_gradient=grade_params.get("dose_response", False),
-            plausible_confounding=grade_params.get("confounding_reduces_effect", False)
+            risk_of_bias=grade_params.get("risk_of_bias", "moderate"),
+            consistency="inconsistent" if grade_params.get("has_inconsistency", False) else "consistent",
+            directness="indirect" if grade_params.get("has_indirectness", False) else "direct",
+            precision="imprecise" if grade_params.get("has_imprecision", False) else "precise",
+            publication_bias_likely=grade_params.get("has_publication_bias", False),
+            dose_response=grade_params.get("dose_response", False),
+            confounding_reduces_effect=grade_params.get("confounding_reduces_effect", False)
         )
         results["grade_assessment"] = grade_assessment
+        if status_placeholder:
+            status_placeholder.success(f"✅ **Step 2/4:** GRADE assessment complete - Quality: {grade_assessment.final_quality.value}")
     except Exception as e:
         # If GRADE analysis fails, continue without it
         results["grade_assessment"] = None
         results["grade_error"] = str(e)
+        if status_placeholder:
+            status_placeholder.warning(f"⚠️ **Step 2/4:** GRADE assessment unavailable - continuing without quality rating")
     
     # Step 3: MI Agent formats response (now includes GRADE quality if available)
+    if status_placeholder:
+        status_placeholder.info("🔄 **Step 3/4:** Generating compliant Medical Information response...")
     grade_context = ""
     if results["grade_assessment"]:
         grade_context = f"\n\nEVIDENCE QUALITY (GRADE): {results['grade_assessment'].final_quality.value}\n{results['grade_assessment'].certainty_rating}\n"
@@ -818,13 +995,27 @@ Response:"""
     
     mi_response_result = await kernel.invoke_prompt(mi_prompt, arguments=KernelArguments())
     results["mi_response"] = str(mi_response_result)
+    if status_placeholder:
+        status_placeholder.success("✅ **Step 3/4:** Medical Information response generated")
     
-    # Step 4: Compliance Guard validates
+    # Step 4: Compliance Guard validates (with GRADE context)
+    if status_placeholder:
+        status_placeholder.info("🔄 **Step 4/4:** Validating regulatory compliance with FDA standards...")
+    grade_quality_str = None
+    if results.get("grade_assessment"):
+        grade_quality_str = results["grade_assessment"].final_quality.value
+    
     results["compliance"] = await run_compliance_check(
         results["evidence"],
         results["mi_response"],
-        kernel
+        kernel,
+        grade_quality=grade_quality_str
     )
+    
+    if status_placeholder:
+        risk_level = results["compliance"].get("risk_level", "UNKNOWN")
+        risk_icons = {"LOW": "✅", "MEDIUM": "⚠️", "HIGH": "🚨", "UNKNOWN": "❓"}
+        status_placeholder.success(f"{risk_icons.get(risk_level, '❓')} **Step 4/4:** Compliance validation complete - Risk Level: {risk_level}")
     
     return results
 
@@ -853,7 +1044,7 @@ def display_compliance_result(compliance: dict):
     
     st.markdown(f"""
     <div class="{box_class}">
-        <h3>{icon} Risk Level: {risk_level}</h3>
+        <h3>{icon} Compliance Risk Level: {risk_level}</h3>
     </div>
     """, unsafe_allow_html=True)
     
@@ -869,10 +1060,148 @@ def display_compliance_result(compliance: dict):
                 st.write(f"• {flag}")
     
     with col2:
+        if compliance.get('positive_factors'):
+            st.write("**Positive Factors:**")
+            for factor in compliance['positive_factors']:
+                st.write(f"✓ {factor}")
+        
         if compliance.get('recommendations'):
             st.write("**Recommendations:**")
             for rec in compliance['recommendations']:
                 st.write(f"• {rec}")
+
+def display_unified_assessment(grade_assessment, compliance_result):
+    """Display unified GRADE + Compliance assessment in a single table"""
+    
+    st.subheader("📊 Unified Quality & Compliance Assessment")
+    
+    # Prepare GRADE data
+    if grade_assessment:
+        grade_quality = grade_assessment.final_quality.value
+        grade_symbols = {
+            "HIGH": "⊕⊕⊕⊕",
+            "MODERATE": "⊕⊕⊕○",
+            "LOW": "⊕⊕○○",
+            "VERY_LOW": "⊕○○○"
+        }
+        grade_symbol = grade_symbols.get(grade_quality, "?")
+        grade_rating = grade_assessment.certainty_rating
+        grade_recommendation = grade_assessment.recommendation_strength
+    else:
+        grade_quality = "N/A"
+        grade_symbol = "?"
+        grade_rating = "Assessment unavailable"
+        grade_recommendation = "N/A"
+    
+    # Prepare Compliance data
+    compliance_risk = compliance_result.get('risk_level', 'UNKNOWN')
+    compliance_flags = compliance_result.get('flags', [])
+    compliance_recs = compliance_result.get('recommendations', [])
+    compliance_positives = compliance_result.get('positive_factors', [])
+    requires_review = compliance_result.get('requires_medical_review', False)
+    
+    # Create two-column layout for side-by-side comparison
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # GRADE Evidence Quality Card
+        grade_colors = {
+            "HIGH": "#28a745",
+            "MODERATE": "#17a2b8",
+            "LOW": "#ffc107",
+            "VERY_LOW": "#dc3545",
+            "N/A": "#6c757d"
+        }
+        grade_color = grade_colors.get(grade_quality, "#6c757d")
+        
+        st.markdown(f"""
+        <div style="background-color: {grade_color}15; padding: 1rem; border-radius: 0.5rem; 
+                    border-left: 4px solid {grade_color}; margin-bottom: 1rem; min-height: 200px;">
+            <h3 style="margin-top: 0; color: {grade_color};">
+                {grade_symbol} GRADE Evidence Quality
+            </h3>
+            <p style="font-size: 1.2rem; font-weight: bold; margin: 0.5rem 0;">
+                {grade_quality}
+            </p>
+            <p style="font-size: 0.9rem; margin: 0.5rem 0;">
+                <strong>Certainty:</strong> {grade_rating}
+            </p>
+            <p style="font-size: 0.9rem; margin: 0.5rem 0;">
+                <strong>Recommendation Strength:</strong> {grade_recommendation}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if grade_assessment:
+            with st.expander("📋 GRADE Details"):
+                st.markdown(grade_assessment.evidence_summary)
+    
+    with col2:
+        # FDA Compliance Risk Card
+        compliance_colors = {
+            "LOW": "#28a745",
+            "MEDIUM": "#ffc107",
+            "HIGH": "#dc3545",
+            "UNKNOWN": "#6c757d"
+        }
+        compliance_color = compliance_colors.get(compliance_risk, "#6c757d")
+        compliance_icons = {
+            "LOW": "✅",
+            "MEDIUM": "⚠️",
+            "HIGH": "🚨",
+            "UNKNOWN": "❓"
+        }
+        compliance_icon = compliance_icons.get(compliance_risk, "❓")
+        
+        st.markdown(f"""
+        <div style="background-color: {compliance_color}15; padding: 1rem; border-radius: 0.5rem; 
+                    border-left: 4px solid {compliance_color}; margin-bottom: 1rem; min-height: 200px;">
+            <h3 style="margin-top: 0; color: {compliance_color};">
+                {compliance_icon} FDA Compliance Risk
+            </h3>
+            <p style="font-size: 1.2rem; font-weight: bold; margin: 0.5rem 0;">
+                {compliance_risk}
+            </p>
+            <p style="font-size: 0.9rem; margin: 0.5rem 0;">
+                <strong>Medical Review Required:</strong> {'Yes' if requires_review else 'No'}
+            </p>
+            <p style="font-size: 0.9rem; margin: 0.5rem 0;">
+                <strong>Issues Found:</strong> {len(compliance_flags)}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.expander("📋 Compliance Details"):
+            if compliance_positives:
+                st.write("**✓ Positive Factors:**")
+                for factor in compliance_positives:
+                    st.write(f"• {factor}")
+            
+            if compliance_flags:
+                st.write("**⚠️ Compliance Flags:**")
+                for flag in compliance_flags:
+                    st.write(f"• {flag}")
+            
+            if compliance_recs:
+                st.write("**💡 Recommendations:**")
+                for rec in compliance_recs:
+                    st.write(f"• {rec}")
+    
+    # Summary interpretation
+    st.divider()
+    st.write("**Summary Interpretation:**")
+    
+    # Create interpretation matrix
+    if grade_quality == "HIGH" and compliance_risk == "LOW":
+        st.success("✅ **Ideal**: HIGH quality evidence with LOW compliance risk. Response is scientifically sound and regulatory compliant.")
+    elif grade_quality == "HIGH" and compliance_risk == "HIGH":
+        st.error("⚠️ **Caution**: HIGH quality evidence but HIGH compliance risk. Likely discusses off-label use with good evidence - must reframe to stay compliant.")
+    elif grade_quality in ["LOW", "VERY_LOW"] and compliance_risk == "LOW":
+        st.warning("ℹ️ **Acceptable**: LOW quality evidence but compliant response. Evidence is weak but stays within approved labeling.")
+    elif grade_quality in ["LOW", "VERY_LOW"] and compliance_risk == "HIGH":
+        st.error("🚨 **Problematic**: LOW quality evidence AND HIGH compliance risk. Both scientific and regulatory concerns exist.")
+    else:
+        st.info(f"📊 **Mixed Assessment**: {grade_quality} quality evidence with {compliance_risk} compliance risk. Review details above.")
 
 # ============================================================================
 # Main Application
@@ -1152,19 +1481,21 @@ def main():
         
         if st.button("▶️ Run Full Workflow", type="primary", use_container_width=True):
             if mi_query:
-                progress_bar = st.progress(0, text="Starting workflow...")
+                # Create placeholder for real-time A2A status updates
+                status_placeholder = st.empty()
                 
                 try:
-                    # Run full workflow
-                    progress_bar.progress(10, text="📚 Step 1/4: Literature Scout searching...")
+                    # Run full workflow with real-time status updates
+                    status_placeholder.info("� **Initializing multi-agent workflow...**")
                     results = asyncio.run(run_full_mi_workflow(
                         mi_query,
                         st.session_state.a2a_base,
-                        kernel
+                        kernel,
+                        status_placeholder=status_placeholder,
+                        a2a_log_container=st.container()
                     ))
                     
-                    progress_bar.progress(100, text="✅ Workflow complete!")
-                    progress_bar.empty()
+                    status_placeholder.success("🎉 **All agents completed! Workflow successful.**")
                     
                     # Store results in session state
                     st.session_state.workflow_results = results
@@ -1180,9 +1511,8 @@ def main():
                     })
                     
                 except Exception as e:
-                    progress_bar.empty()
-                    st.error(f"❌ Error: {str(e)}")
-                    st.info("Make sure the A2A server is running (execute the notebook cell 8)")
+                    status_placeholder.error(f"❌ **Error during workflow:** {str(e)}")
+                    st.info("💡 **Troubleshooting:** Make sure the Literature Scout A2A server is running on port 9099")
                     st.session_state.workflow_completed = False
             else:
                 st.warning("Please enter a query")
@@ -1196,55 +1526,19 @@ def main():
             st.success("✅ Medical Affairs workflow completed!")
             
             # Evidence
-            with st.expander("📚 Step 1: Evidence from Literature Scout", expanded=True):
+            with st.expander("📚 Step 1: Evidence from Literature Scout", expanded=False):
                 st.markdown(results["evidence"])
             
-            # GRADE Assessment
-            if results.get("grade_assessment"):
-                grade_assessment = results["grade_assessment"]
-                with st.expander(f"⊕ Step 2: GRADE Evidence Quality Assessment - {grade_assessment.final_quality.value}", expanded=True):
-                    # Quality level with emoji indicators
-                    quality_symbols = {
-                        "HIGH": "⊕⊕⊕⊕",
-                        "MODERATE": "⊕⊕⊕○",
-                        "LOW": "⊕⊕○○",
-                        "VERY_LOW": "⊕○○○"
-                    }
-                    quality_colors = {
-                        "HIGH": "#28a745",
-                        "MODERATE": "#17a2b8", 
-                        "LOW": "#ffc107",
-                        "VERY_LOW": "#dc3545"
-                    }
-                    
-                    quality = grade_assessment.final_quality.value
-                    st.markdown(f"""
-                    <div style="background-color: {quality_colors.get(quality, '#f0f2f6')}20; 
-                                padding: 1rem; border-radius: 0.5rem; border-left: 4px solid {quality_colors.get(quality, '#0078D4')};">
-                        <h3 style="margin: 0; color: {quality_colors.get(quality, '#0078D4')};">
-                            {quality_symbols.get(quality, "")} Evidence Quality: {quality}
-                        </h3>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.write("")
-                    st.write(f"**Certainty Rating:** {grade_assessment.certainty_rating}")
-                    st.write(f"**Recommendation Strength:** {grade_assessment.recommendation_strength}")
-                    
-                    # Show evidence summary
-                    st.markdown("**Evidence Summary:**")
-                    st.markdown(grade_assessment.evidence_summary)
-            elif results.get("grade_error"):
-                with st.expander("⊕ Step 2: GRADE Evidence Quality Assessment - Unable to assess", expanded=False):
-                    st.warning(f"GRADE assessment could not be completed: {results['grade_error']}")
-            
             # MI Response
-            with st.expander("📝 Step 3: Medical Information Response", expanded=True):
+            with st.expander("📝 Step 2: Medical Information Response", expanded=False):
                 st.markdown(results["mi_response"])
             
-            # Compliance
-            with st.expander("⚠️ Step 4: Compliance Assessment", expanded=True):
-                display_compliance_result(results["compliance"])
+            # Unified GRADE + Compliance Assessment
+            st.divider()
+            display_unified_assessment(
+                results.get("grade_assessment"),
+                results["compliance"]
+            )
             
             # Summary
             st.divider()
@@ -1287,7 +1581,8 @@ def main():
                             evidence=results["evidence"],
                             response=results["mi_response"],
                             compliance_result=results["compliance"],
-                            output_filename=pdf_filename
+                            output_filename=pdf_filename,
+                            grade_assessment=results.get("grade_assessment")
                         )
                         
                         # Read the PDF for download
@@ -1347,7 +1642,8 @@ def main():
                         response=results["mi_response"],
                         compliance_result=results["compliance"],
                         ref_number=ref_num,
-                        pdf_path=pdf_path
+                        pdf_path=pdf_path,
+                        grade_assessment=results.get("grade_assessment")
                     )
                     
                     st.success(f"✅ Logged to CRM! Record ID: {crm_record['record_id']}")
@@ -1364,7 +1660,8 @@ def main():
                         with col_b:
                             st.write(f"**Category:** {crm_record['query_category']}")
                             st.write(f"**Products:** {', '.join(crm_record['products_mentioned'])}")
-                            st.write(f"**Risk Level:** {crm_record['compliance_risk']}")
+                            st.write(f"**GRADE Quality:** {crm_record.get('grade_quality', 'Not Assessed')}")
+                            st.write(f"**Compliance Risk:** {crm_record['compliance_risk']}")
                             st.write(f"**Status:** {crm_record['status']}")
                             st.write(f"**PDF:** {crm_record['pdf_attachment']}")
             
@@ -1544,7 +1841,8 @@ def main():
                         "Specialty": record["hcp_specialty"],
                         "Category": record["query_category"],
                         "Products": ", ".join(record["products_mentioned"]),
-                        "Risk": record["compliance_risk"],
+                        "GRADE": record.get("grade_quality", "Not Assessed"),
+                        "Compliance": record["compliance_risk"],
                         "Status": record["status"]
                     })
                 

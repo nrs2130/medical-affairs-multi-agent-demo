@@ -242,9 +242,13 @@ class GRADEEvidenceAgent:
                                    effect_size: float, ci: tuple,
                                    downgrades: List[str], upgrades: List[str],
                                    initial: EvidenceQuality, final: EvidenceQuality) -> str:
-        """Generate comprehensive evidence summary"""
+        """Generate comprehensive evidence summary with detailed rationale"""
         
-        summary = f"**Study Design:** {design_type}\n"
+        summary = "**GRADE EVIDENCE QUALITY ASSESSMENT**\n"
+        summary += "=" * 60 + "\n\n"
+        
+        # Study characteristics
+        summary += f"**Study Design:** {design_type}\n"
         summary += f"**Sample Size:** {sample_size} participants\n"
         
         if effect_size and ci:
@@ -252,21 +256,96 @@ class GRADEEvidenceAgent:
         elif effect_size:
             summary += f"**Effect Estimate:** RR = {effect_size:.2f}\n"
         
+        # Initial quality with explanation
         summary += f"\n**Initial GRADE Quality:** {initial.value}\n"
+        summary += f"*Rationale: {self._get_initial_quality_rationale(design_type)}*\n"
         
-        if downgrades:
-            summary += f"\n**Downgrades (↓):**\n"
-            for downgrade in downgrades:
-                summary += f"  • {downgrade}\n"
+        # Quality adjustments
+        total_downgrades = len(downgrades)
+        total_upgrades = len(upgrades)
         
-        if upgrades:
-            summary += f"\n**Upgrades (↑):**\n"
-            for upgrade in upgrades:
-                summary += f"  • {upgrade}\n"
+        if downgrades or upgrades:
+            summary += f"\n**Quality Adjustments:**\n"
+            
+            if downgrades:
+                summary += f"\n  **Downgrades (↓{total_downgrades}):** Quality reduced due to:\n"
+                for downgrade in downgrades:
+                    summary += f"    • {downgrade}\n"
+            
+            if upgrades:
+                summary += f"\n  **Upgrades (↑{total_upgrades}):** Quality increased due to:\n"
+                for upgrade in upgrades:
+                    summary += f"    • {upgrade}\n"
+        else:
+            summary += f"\n**No Quality Adjustments:** Evidence maintains initial quality level.\n"
         
-        summary += f"\n**Final GRADE Quality:** {final.value}\n"
+        # Final quality with visual indicator
+        quality_change = ""
+        if final.value != initial.value:
+            if self._quality_to_score(final) > self._quality_to_score(initial):
+                quality_change = f" (↑ from {initial.value})"
+            else:
+                quality_change = f" (↓ from {initial.value})"
+        else:
+            quality_change = " (unchanged)"
+        
+        summary += f"\n**Final GRADE Quality:** {final.value}{quality_change}\n"
+        
+        # Add interpretation
+        summary += f"\n**What This Means:**\n"
+        summary += f"{self._generate_quality_interpretation(final, total_downgrades, total_upgrades)}\n"
         
         return summary
+    
+    def _get_initial_quality_rationale(self, design_type: str) -> str:
+        """Explain why study design gets its initial quality"""
+        rationales = {
+            "Randomized Controlled Trial": "RCTs start at HIGH quality due to randomization reducing bias and confounding",
+            "Observational Study": "Observational studies start at LOW quality due to potential confounding and selection bias",
+            "Case Series/Report": "Case series start at VERY LOW quality due to lack of comparison group and high risk of bias"
+        }
+        return rationales.get(design_type, "Study design determines initial quality level per GRADE methodology")
+    
+    def _generate_quality_interpretation(self, quality: EvidenceQuality, downgrades: int, upgrades: int) -> str:
+        """Generate plain-language interpretation of the GRADE rating"""
+        
+        interpretations = {
+            EvidenceQuality.HIGH: (
+                "The evidence is of HIGH quality. We can be very confident that the true effect "
+                "is close to what the study found. Further research is very unlikely to change "
+                "our confidence in the estimate of effect."
+            ),
+            EvidenceQuality.MODERATE: (
+                "The evidence is of MODERATE quality. We are moderately confident in the effect estimate. "
+                "The true effect is likely close to the estimate, but there is a possibility it could be "
+                "substantially different. Further research may have an important impact on our confidence."
+            ),
+            EvidenceQuality.LOW: (
+                "The evidence is of LOW quality. Our confidence in the effect estimate is limited. "
+                "The true effect may be substantially different from the estimate. Further research is "
+                "very likely to have an important impact on our confidence and may change the estimate."
+            ),
+            EvidenceQuality.VERY_LOW: (
+                "The evidence is of VERY LOW quality. We have very little confidence in the effect estimate. "
+                "The true effect is likely to be substantially different from the estimate. Any estimate "
+                "of effect is very uncertain and should be interpreted with extreme caution."
+            )
+        }
+        
+        interpretation = interpretations[quality]
+        
+        # Add context about adjustments
+        if downgrades > 0 and upgrades > 0:
+            interpretation += f"\n\nNote: Quality was downgraded {downgrades} level(s) due to study limitations, "
+            interpretation += f"but upgraded {upgrades} level(s) due to strong supporting factors."
+        elif downgrades > 0:
+            interpretation += f"\n\nNote: Quality was downgraded {downgrades} level(s) from the initial assessment "
+            interpretation += "due to identified limitations in the evidence."
+        elif upgrades > 0:
+            interpretation += f"\n\nNote: Quality was upgraded {upgrades} level(s) from the initial assessment "
+            interpretation += "due to strong supporting factors (e.g., large effect size, dose-response gradient)."
+        
+        return interpretation
     
     def _determine_recommendation_strength(self, quality: EvidenceQuality, 
                                           effect_size: float = None) -> str:
