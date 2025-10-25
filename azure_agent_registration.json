@@ -1,22 +1,12 @@
 {
-  "registered_at": "2025-10-24T17:46:10.668408",
+  "registered_at": "2025-10-25T18:47:20.571410",
   "endpoint": "https://ai-nistewart1994ai471214134400.services.ai.azure.com",
   "project": "ai-nistewart1994ai47121-project",
   "agents": [
     {
-      "name": "Literature Scout Agent",
-      "id": "asst_MA28hc1YMgbtS4xd1DfEBXDn",
-      "created_at": 1761342370
-    },
-    {
-      "name": "MI Orchestrator Agent",
-      "id": "asst_llk1aTZkgXhhTB9N9NA4gbAK",
-      "created_at": 1761342370
-    },
-    {
-      "name": "Compliance Guard Agent",
-      "id": "asst_kajhnBtp10VIjSxQQQGYErCN",
-      "created_at": 1761342371
+      "name": "GRADE Evidence Assessment Agent",
+      "id": "asst_s33a8HqMDwGwhyZ86hhJiP46",
+      "created_at": 1761432440
     }
   ]
 }

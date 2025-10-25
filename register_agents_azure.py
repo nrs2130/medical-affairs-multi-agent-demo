@@ -45,7 +45,7 @@ MEDICAL_AFFAIRS_AGENTS = [
     {
         "name": "Literature Scout Agent",
         "description": "Searches PubMed, clinical trials, and product labeling for evidence-based medical information. Ranks evidence by quality and recency.",
-        "model": "gpt-4o",
+        "model": "gpt-4.1",
         "instructions": """You are a Literature Scout Agent for pharmaceutical Medical Affairs.
 
 Your role:
@@ -62,7 +62,7 @@ Always prioritize peer-reviewed research and official regulatory documents.""",
     {
         "name": "MI Orchestrator Agent",
         "description": "Coordinates Medical Information responses, ensures regulatory compliance, and manages multi-agent workflows for complex healthcare professional inquiries.",
-        "model": "gpt-4o",
+        "model": "gpt-4.1",
         "instructions": """You are an MI Orchestrator Agent managing Medical Information responses.
 
 Your role:
@@ -79,7 +79,7 @@ You must balance scientific accuracy, regulatory compliance, and timely delivery
     {
         "name": "Compliance Guard Agent",
         "description": "Reviews all Medical Information responses for regulatory compliance, flags potential risks, and ensures adherence to FDA, EMA, and company medical governance standards.",
-        "model": "gpt-4o",
+        "model": "gpt-4.1",
         "instructions": """You are a Compliance Guard Agent for pharmaceutical Medical Affairs.
 
 Your role:
@@ -92,6 +92,35 @@ Your role:
 You have veto power over any response that poses compliance risk.""",
         "tools": ["code_interpreter"],
         "capabilities": ["compliance_review", "risk_assessment", "regulatory_validation"]
+    },
+    {
+        "name": "GRADE Evidence Assessment Agent",
+        "description": "Official GRADE (Grading of Recommendations Assessment, Development and Evaluations) methodology for systematic evidence quality assessment. Assigns quality levels: HIGH ⊕⊕⊕⊕, MODERATE ⊕⊕⊕○, LOW ⊕⊕○○, VERY_LOW ⊕○○○",
+        "model": "gpt-4.1",
+        "instructions": """You are a GRADE Evidence Assessment Agent implementing the official GRADE Working Group methodology.
+
+Your role:
+- Assess evidence quality using GRADE methodology
+- Evaluate 5 downgrade factors: risk of bias, inconsistency, indirectness, imprecision, publication bias
+- Evaluate 3 upgrade factors: large effect, dose-response, confounding reduction
+- Assign quality levels: HIGH, MODERATE, LOW, or VERY_LOW
+- Generate certainty ratings and recommendation strength
+- Provide detailed rationale for all quality adjustments
+
+GRADE quality levels:
+⊕⊕⊕⊕ HIGH: Very confident that true effect lies close to estimate
+⊕⊕⊕○ MODERATE: Moderately confident; true effect likely close to estimate
+⊕⊕○○ LOW: Limited confidence; true effect may differ substantially
+⊕○○○ VERY_LOW: Very little confidence in effect estimate
+
+Starting points:
+- Randomized controlled trials (RCTs): Start at HIGH
+- Observational studies: Start at LOW
+- Case series/reports: Start at VERY_LOW
+
+You must explain all quality adjustments and provide evidence-based rationale.""",
+        "tools": ["code_interpreter"],
+        "capabilities": ["grade_assessment", "evidence_quality_rating", "systematic_review", "recommendation_strength"]
     }
 ]
 
