@@ -1,8 +1,28 @@
 """
-Delete existing agents and re-register with correct model (gpt-4.1)
+Delete and Re-register Medical Affairs Agents with Updated Configuration
+=========================================================================
+
+This script:
+1. Deletes existing agents from Azure AI Foundry
+2. Re-registers them with updated model or configuration
+
+Use cases:
+- Update agent model (e.g., gpt-4o → gpt-4.1)
+- Modify agent instructions or capabilities
+- Reset agent state
+
+Note: This uses the Azure AI Foundry Agent Service API (/api/projects/{project}/assistants)
+      to manage externally-built Semantic Kernel agents in the Foundry project.
+
+Prerequisites:
+- Agents must be already registered (run register_agents_azure.py first)
+- Valid .env file with Azure AI Foundry credentials
+- Azure CLI authentication (run 'az login')
 """
 
 import os
+import subprocess
+import json
 import httpx
 from dotenv import load_dotenv
 from register_agents_azure import AzureAIFoundryClient, MEDICAL_AFFAIRS_AGENTS
@@ -11,19 +31,26 @@ from register_agents_azure import AzureAIFoundryClient, MEDICAL_AFFAIRS_AGENTS
 load_dotenv()
 
 ENDPOINT = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "").rstrip("/")
-API_KEY = os.getenv("AZURE_AI_PROJECT_KEY", "")
+PROJECT_NAME = os.getenv("AZURE_AI_PROJECT_NAME", "")
 
 print("=" * 80)
 print("🔄 Delete and Re-register Medical Affairs Agents with gpt-4.1")
 print("=" * 80)
-print(f"\n📍 Endpoint: {ENDPOINT}\n")
+print(f"\n📍 Endpoint: {ENDPOINT}")
+print(f"📦 Project: {PROJECT_NAME}")
+print(f"🔐 Auth: Entra ID (Azure CLI)\n")
 
-# Initialize client
-client = AzureAIFoundryClient(ENDPOINT, API_KEY)
+# Initialize client (will get Entra ID token)
+try:
+    client = AzureAIFoundryClient(ENDPOINT)
+    print("✅ Successfully authenticated with Entra ID\n")
+except Exception as e:
+    print(f"❌ Authentication failed: {e}")
+    exit(1)
 
 # Step 1: List existing agents
 print("🔍 Step 1: Listing existing agents...")
-existing_agents = client.list_agents()
+existing_agents = client.list_agents(PROJECT_NAME)
 print(f"   Found {len(existing_agents)} agents\n")
 
 # Step 2: Delete existing Medical Affairs agents
@@ -37,7 +64,7 @@ for agent in existing_agents:
         print(f"🗑️  Deleting: {agent_name} (ID: {agent_id})")
         
         # Delete via API
-        delete_url = f"{ENDPOINT}/openai/assistants/{agent_id}?api-version=2024-07-01-preview"
+        delete_url = f"{ENDPOINT}/api/projects/{PROJECT_NAME}/assistants/{agent_id}?api-version={client.api_version}"
         try:
             with httpx.Client(timeout=30.0) as http_client:
                 response = http_client.delete(delete_url, headers=client.headers)
@@ -63,7 +90,7 @@ for agent_config in MEDICAL_AFFAIRS_AGENTS:
     
     print(f"📝 Registering: {agent_name} (model: {model})")
     try:
-        result = client.create_agent(agent_config)
+        result = client.create_agent(agent_config, PROJECT_NAME)
         agent_id = result.get("id", "unknown")
         print(f"   ✅ Success! (ID: {agent_id})")
         registered.append({

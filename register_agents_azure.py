@@ -2,17 +2,30 @@
 Register Medical Affairs Agents in Azure AI Foundry
 ===================================================
 
-Simple script using REST API and .env file for credentials.
+This script registers external Semantic Kernel agents as OpenAI Assistants in Azure AI Foundry.
+
+How it works:
+- Connects to your Azure AI Foundry project endpoint with credentials
+- Registers agents via Azure AI Foundry Agent Service API (/openai/assistants)
+- Associates agents with your Foundry-hosted model (gpt-4.1)
+- Once registered, agents can be monitored and traced in Azure AI Foundry portal
 
 Setup:
 1. Copy .env.example to .env and fill in your values
 2. pip install python-dotenv httpx
 3. python register_agents_azure.py
+
+Monitoring:
+- Agents registered via /openai/assistants endpoint
+- View in Azure AI Foundry: https://ai.azure.com/ → Build → Assistants
+- Or Azure OpenAI Studio: https://oai.azure.com/ → Assistants
+- Conversations and traces appear in the Azure AI Foundry portal after agent execution
 """
 
 import os
 import json
 import httpx
+import subprocess
 from datetime import datetime
 from typing import Dict, Any, List
 from dotenv import load_dotenv
@@ -22,18 +35,18 @@ load_dotenv()
 
 # Azure AI Foundry Configuration
 ENDPOINT = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "").rstrip("/")
-API_KEY = os.getenv("AZURE_AI_PROJECT_KEY", "")
 PROJECT_NAME = os.getenv("AZURE_AI_PROJECT_NAME", "")
 
 # Validate configuration
-if not ENDPOINT or not API_KEY:
+if not ENDPOINT or not PROJECT_NAME:
     print("=" * 80)
-    print("❌ ERROR: Missing Azure AI Foundry credentials!")
+    print("❌ ERROR: Missing Azure AI Foundry configuration!")
     print("=" * 80)
     print("\n📋 Setup Instructions:")
     print("1. Copy .env.example to .env")
-    print("2. Fill in your Azure AI Foundry endpoint and API key")
-    print("3. Run this script again\n")
+    print("2. Fill in AZURE_AI_PROJECT_ENDPOINT and AZURE_AI_PROJECT_NAME")
+    print("3. Run 'az login' to authenticate")
+    print("4. Run this script again\n")
     exit(1)
 
 
@@ -130,22 +143,60 @@ You must explain all quality adjustments and provide evidence-based rationale.""
 # ============================================================================
 
 class AzureAIFoundryClient:
-    """Simple REST API client for Azure AI Foundry Agent Service."""
+    """
+    REST API client for Azure AI Foundry Agent Service.
     
-    def __init__(self, endpoint: str, api_key: str):
+    This client registers externally-built agents (using Semantic Kernel with a 
+    Foundry-hosted model) into an Azure AI Foundry project.
+    
+    Registration process:
+    1. Connect to your Foundry project's endpoint with proper credentials
+    2. Call the Agent Service API (/api/projects/{project}/assistants) to create a new agent
+    3. Associate agent with your deployed model (e.g., gpt-4.1)
+    4. Agent and its conversations can then be monitored and traced in Azure AI Foundry portal
+    
+    Monitoring & Tracing:
+    - View registered agents: https://ai.azure.com/ → Build → Agents
+    - Track conversations: Agent execution traces appear in portal after running
+    - Access metrics: Performance and usage data available in Azure Monitor
+    """
+    
+    def __init__(self, endpoint: str):
         self.endpoint = endpoint.rstrip("/")
-        self.api_key = api_key
+        # GA API version for Azure AI Foundry Agent Service
+        self.api_version = "2025-05-01"
+        # Get Entra ID token for authentication
+        self.token = self._get_entra_token()
         self.headers = {
-            "api-key": api_key,
+            "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json"
         }
-        # API version for Azure AI Agent Service
-        self.api_version = "2024-07-01-preview"
     
-    def create_agent(self, agent_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create an agent in Azure AI Foundry."""
-        # Use the OpenAI Assistants API endpoint (Azure AI Foundry compatible)
-        url = f"{self.endpoint}/openai/assistants?api-version={self.api_version}"
+    def _get_entra_token(self) -> str:
+        """Get Entra ID access token using Azure CLI."""
+        try:
+            result = subprocess.run(
+                ["az", "account", "get-access-token", "--resource", "https://ai.azure.com"],
+                capture_output=True,
+                text=True,
+                check=True,
+                shell=True  # Use shell to find az command in PATH
+            )
+            token_data = json.loads(result.stdout)
+            return token_data["accessToken"]
+        except subprocess.CalledProcessError as e:
+            print("\n❌ Failed to get Entra ID token!")
+            print("Please run 'az login' first to authenticate.\n")
+            raise
+        except Exception as e:
+            print(f"\n❌ Error getting token: {e}")
+            print("Make sure Azure CLI is installed and you're logged in.\n")
+            raise
+    
+    def create_agent(self, agent_config: Dict[str, Any], project_name: str) -> Dict[str, Any]:
+        """Create an agent in Azure AI Foundry Agent Service."""
+        # Use the Azure AI Foundry Agent Service endpoint
+        url = f"{self.endpoint}/api/projects/{project_name}/assistants?api-version={self.api_version}"
         
         # Prepare agent payload according to Azure AI Agent Service schema
         payload = {
@@ -174,9 +225,9 @@ class AzureAIFoundryClient:
             print(f"\n❌ Error creating agent: {e}")
             raise
     
-    def list_agents(self) -> List[Dict[str, Any]]:
+    def list_agents(self, project_name: str) -> List[Dict[str, Any]]:
         """List all agents in the project."""
-        url = f"{self.endpoint}/openai/assistants?api-version={self.api_version}"
+        url = f"{self.endpoint}/api/projects/{project_name}/assistants?api-version={self.api_version}"
         
         try:
             with httpx.Client(timeout=30.0) as client:
@@ -200,15 +251,20 @@ def register_all_agents():
     print("=" * 80)
     print(f"\n📍 Endpoint: {ENDPOINT}")
     print(f"📦 Project: {PROJECT_NAME}")
-    print(f"🔑 API Key: {'*' * 20}{API_KEY[-10:] if API_KEY else 'NOT SET'}\n")
+    print(f"� Auth: Entra ID (Azure CLI)\n")
     
-    # Initialize client
-    client = AzureAIFoundryClient(ENDPOINT, API_KEY)
+    # Initialize client (will get Entra ID token)
+    try:
+        client = AzureAIFoundryClient(ENDPOINT)
+        print("✅ Successfully authenticated with Entra ID\n")
+    except Exception as e:
+        print(f"❌ Authentication failed: {e}")
+        return
     
     # Check existing agents
     print("🔍 Checking existing agents...")
     try:
-        existing_agents = client.list_agents()
+        existing_agents = client.list_agents(PROJECT_NAME)
         existing_names = {agent.get("name") for agent in existing_agents}
         print(f"   Found {len(existing_agents)} existing agents\n")
     except Exception as e:
@@ -231,7 +287,7 @@ def register_all_agents():
         
         print(f"📝 Registering: {agent_name}")
         try:
-            result = client.create_agent(agent_config)
+            result = client.create_agent(agent_config, PROJECT_NAME)
             agent_id = result.get("id", "unknown")
             print(f"   ✅ Success! (ID: {agent_id})")
             registered.append({
