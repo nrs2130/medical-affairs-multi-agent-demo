@@ -633,8 +633,8 @@ A: The demo does **not** handle PHI (Protected Health Information). For HIPAA co
 
 For questions or issues:
 - **GitHub Issues**: [Create an issue](https://github.com/nrs2130/medical-affairs-multi-agent/issues)
-- **Email**: nstewart@example.com (replace with actual)
-- **LinkedIn**: [Nick Stewart](https://linkedin.com/in/nickstewart)
+- **Email**: nistewart@microsoft.com (replace with actual)
+- **LinkedIn**: [Nick Stewart](https://www.linkedin.com/in/nicholas-stewart-phd/)
 
 ---
 
@@ -642,4 +642,4 @@ For questions or issues:
 
 ---
 
-*Last Updated: October 2024*
+*Last Updated: October 2025*
