@@ -22,9 +22,12 @@ wheels/
 
 # Virtual Environment
 venv/
-env/
 ENV/
+env/
 .venv
+
+# Environment variables
+.env
 
 # IDE
 .vscode/
@@ -32,47 +35,34 @@ ENV/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*.ipynb_checkpoints/
 
-# Environment Variables
-.env
-.env.local
-.env.*.local
-
-# Azure OpenAI Credentials (NEVER COMMIT THESE!)
-**/AZURE_OPENAI_*.txt
-**/api_key*.txt
-
-# CRM Data (Contains demo/test data - exclude for privacy)
-crm_data/
-*.db
-*.db-journal
-
-# AI Foundry Registry (Local agent tracking data)
-ai_foundry_registry/
-*.foundry.json
-
-# Generated PDFs (May contain proprietary content)
-mi_responses/
-*.pdf
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
 *.log
-logs/
 
-# Streamlit
-.streamlit/secrets.toml
+# Databases
+*.db
+*.sqlite
+*.sqlite3
 
-# System Files
-Thumbs.db
-Desktop.ini
+# Generated data folders (created at runtime)
+crm_data/
+mi_responses/
+ai_foundry_registry/
+**/crm_data/
+**/mi_responses/
+**/ai_foundry_registry/
 
-# Temporary Files
-*.tmp
-*.temp
+# Temporary files
 tmp/
 temp/
+*.tmp
+
+# Azure
+.azure/

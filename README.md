@@ -1,645 +1,493 @@
-# Medical Affairs Evidence Synthesis & Response System
+# 🏥 Medical Affairs Multi-Agent System
 
-A production-ready multi-agent AI system for pharmaceutical Medical Affairs teams, powered by **Azure OpenAI**, **Semantic Kernel**, and the **Agent-to-Agent (A2A) Protocol**.
+> **AI-powered Medical Information response system for pharmaceutical Medical Affairs teams**  
+> Demonstrates compliant, evidence-based HCP inquiry responses using multi-agent orchestration with A2A Protocol
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft-Agent%20Framework-0078D4)](https://github.com/microsoft/agent-framework)
+
+---
+
+## 📋 Table of Contents
+
+- [Overview](#overview)
+- [Use Case](#use-case)
+- [Architecture](#architecture)
+- [Framework Implementations](#framework-implementations)
+- [Quick Start](#quick-start)
+- [Key Features](#key-features)
+- [Demo Scenarios](#demo-scenarios)
+- [Project Structure](#project-structure)
+- [Technology Stack](#technology-stack)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
+
+---
 
 ## 🎯 Overview
 
-This system demonstrates how pharmaceutical companies can use AI agents to transform Medical Information (MI) operations from manual, time-intensive processes into automated, compliant, and traceable workflows.
+This repository demonstrates a **production-ready multi-agent system** designed for pharmaceutical Medical Affairs teams to handle Healthcare Practitioner (HCP) inquiries with:
 
-### The Problem
+- ✅ **Regulatory Compliance** - Automated guardrails for FDA/EMA compliance
+- 📚 **Evidence-Based Responses** - Grounded in approved labeling + peer-reviewed literature
+- 🤖 **Multi-Agent Orchestration** - Specialized agents for search, synthesis, and compliance
+- 🔍 **Full Audit Trail** - Complete logging for regulatory inspections (21 CFR Part 11)
+- ⚡ **Real-Time Processing** - Sub-minute response times vs. hours/days for manual MI requests
 
-- **Manual MI Responses**: Healthcare providers (HCPs) ask medical questions → Medical Affairs teams spend hours/days researching → Response delays impact patient care
-- **Compliance Risk**: Off-label content, promotional language, or unsupported claims can lead to FDA warnings
-- **Audit Requirements**: FDA requires complete tracking of all HCP interactions
-- **Scalability**: Limited MI team capacity vs. growing HCP inquiry volume
+### Why This Matters for Life Sciences
 
-### The Solution
+Medical Affairs teams receive hundreds of inquiries monthly from HCPs about product usage, dosing, safety, and efficacy. Each response requires:
 
-**AI-Powered Multi-Agent Workflow:**
-1. 🔍 **Literature Scout Agent** → Retrieves evidence from FDA labels, clinical trials, publications
-2. 📝 **MI Agent** → Generates fair-balanced, compliant responses
-3. ⚠️ **Compliance Guard** → Validates for regulatory risks, flags high-risk content
-4. 📄 **PDF Generator** → Creates professional MI letters for distribution
-5. 📊 **CRM Integration** → Logs interactions to Veeva Medical CRM with full audit trail
+1. **Literature search** across PubMed, clinical trials registries, and internal documents
+2. **Evidence synthesis** with proper citation and quality grading (GRADE methodology)
+3. **Compliance review** to prevent off-label promotion and regulatory violations
+4. **Medical review** by qualified personnel before distribution
+5. **Audit logging** for regulatory inspections
 
-**Result:** Hours/days → **Seconds** | Manual → **AI-Assisted** | Risky → **Compliance-Validated**
-
----
-
-## 🆕 Recent Enhancements (October 2025)
-
-### Enhanced GRADE Evidence Assessment
-- **Detailed Quality Explanations**: GRADE agent now provides comprehensive rationale for quality ratings
-- **Initial Quality Reasoning**: Explains why study design determines starting quality (RCT=HIGH, Observational=LOW, etc.)
-- **Quality Adjustment Transparency**: Shows all downgrades ↓ and upgrades ↑ with specific reasons
-- **Plain-Language Interpretation**: "What This Means" section translates GRADE ratings for stakeholders
-- **Unified Assessment View**: Side-by-side GRADE quality + FDA compliance risk cards
-
-### Real-Time A2A Communication Logging
-- **Protocol Visibility**: See actual HTTP requests, agent discovery, and message exchange in real-time
-- **4-Step Logging**: Captures Agent Discovery → Agent Card → Message Send → Response Received
-- **Educational Showcase**: Perfect for demos showing how A2A agents communicate
-- **Debugging Support**: Message IDs, context IDs, and timestamps for troubleshooting
-- **See Details**: Check `A2A_LOGGING_FEATURE.md` for complete documentation
+**Manual process:** 2-5 days per inquiry  
+**AI-powered process:** < 5 minutes with human-in-the-loop for high-risk responses
 
 ---
 
-## ✨ Key Features
+## 💼 Use Case
 
-### 🤖 Multi-Agent Architecture
-- **Separation of Concerns**: Each agent specializes (search vs. synthesis vs. compliance)
-- **Agent-to-Agent Protocol (A2A)**: Standardized agent communication using Microsoft's A2A SDK
-- **Semantic Kernel**: Advanced LLM orchestration with Azure OpenAI GPT-4
-- **Reusable Agents**: Literature Scout can serve multiple downstream workflows
+### Scenario: HCP Renal Dosing Inquiry
 
-### 🛡️ Regulatory Compliance
-- **Automated Compliance Checks**: Flags off-label content, promotional language, unsupported claims
-- **Risk Stratification**: LOW/MEDIUM/HIGH risk levels for triage
-- **Medical Review Routing**: High-risk responses automatically flagged for human review
-- **Fair Balance**: Ensures safety information accompanies efficacy claims
+**Query from Field Team:**  
+> *"What's the renal dosing guidance for Drug X in severe CKD (eGFR <30)? HCP needs answer for patient consult."*
 
-### 📄 PDF Generation
-- **FDA-Compliant MI Letters**: Industry-standard format with letterhead, reference numbers, disclaimers
-- **Professional Output**: ReportLab-generated PDFs ready for field distribution
-- **Batch Processing**: Generate multiple letters for common queries
+### Multi-Agent Workflow
 
-### 📊 CRM Integration
-- **Persistent Storage**: SQLite database + JSON export for complete audit trail
-- **Veeva Medical CRM Simulation**: Models real-world pharmaceutical CRM workflows
-- **Analytics Dashboard**: Query categories, risk distribution, HCP interaction history
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  📥 HCP INQUIRY                                                 │
+│  "Renal dosing for Drug X in severe CKD?"                       │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🤖 LITERATURE SCOUT AGENT (A2A Server)                         │
+│  • Searches PubMed, ClinicalTrials.gov, FDA labeling            │
+│  • Retrieves 3-5 highest quality studies                        │
+│  • Returns structured evidence with citations                   │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  📊 EVIDENCE SYNTHESIZER (Optional)                             │
+│  • Creates structured evidence tables                           │
+│  • Grades evidence strength (GRADE methodology)                 │
+│  • Synthesizes findings across studies                          │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  ✍️  MEDICAL INFORMATION AGENT                                  │
+│  • Formats fair-balanced response                               │
+│  • Leads with approved labeling                                 │
+│  • Supports with clinical evidence (cited)                      │
+│  • Includes safety considerations                               │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🛡️  COMPLIANCE GUARD AGENT                                     │
+│  • Flags off-label content                                      │
+│  • Detects promotional language                                 │
+│  • Assesses regulatory risk (LOW/MEDIUM/HIGH)                   │
+│  • Routes high-risk to medical review                           │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ├─── LOW RISK ─────────┐
+                  │                       │
+                  ▼                       ▼
+       ┌────────────────────┐  ┌─────────────────────┐
+       │  📄 AUTO-APPROVE   │  │  ⚠️  MEDICAL REVIEW │
+       │  • Generate PDF    │  │  • Director approval │
+       │  • Log to CRM      │  │  • Edit if needed    │
+       │  • Distribute      │  │  • Re-run workflow   │
+       └────────┬───────────┘  └──────────┬──────────┘
+                │                          │
+                └──────────┬───────────────┘
+                           │
+                           ▼
+              ┌─────────────────────────┐
+              │  📧 FINAL DELIVERY      │
+              │  • PDF to field team    │
+              │  • Email to HCP         │
+              │  • Archive in Veeva     │
+              └─────────────────────────┘
+```
 
-### 🔍 Azure AI Foundry Integration (NEW!)
-- **Agent Registry**: Register and track all agents in Azure AI Foundry
-- **Observability**: Real-time monitoring with Azure Monitor and Application Insights
-- **Performance Metrics**: Track latency, success rates, error counts per agent
-- **Interaction Tracing**: Complete audit trail of all agent-to-agent communications
-- **Production Ready**: Export to Azure AI Foundry for enterprise deployment
-- **SQL Query Support**: Advanced analytics on historical data
-
-### 🎨 Streamlit Web Interface
-- **5 Interactive Tabs**: Literature Scout, Full MI Workflow, Compliance Check, CRM Analytics, History
-- **Real-Time Workflow**: Watch agents execute in sequence with progress indicators
-- **Download PDFs**: Generate and download professional MI letters
-- **CRM Logging**: One-click interaction logging with complete HCP details
+**Output:**  
+- Professional Medical Information letter (PDF)
+- CRM activity log with reference number
+- Full audit trail with evidence sources
 
 ---
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    MEDICAL AFFAIRS WORKFLOW                     │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-        ┌──────────────────────────────────────────┐
-        │   HCP Query (via Streamlit or Notebook)  │
-        └──────────────────────────────────────────┘
-                              │
-                              ▼
-        ┌─────────────────────────────────────────────────────┐
-        │  📚 LITERATURE SCOUT AGENT (A2A Server - Port 9099) │
-        │  • Searches FDA labels, clinical trials, literature │
-        │  • Returns structured evidence with citations       │
-        └─────────────────────────────────────────────────────┘
-                              │
-                              ▼
-        ┌──────────────────────────────────────────┐
-        │  📝 MEDICAL INFORMATION AGENT (SK)        │
-        │  • Formats compliant MI response         │
-        │  • Fair balance, professional tone       │
-        │  • Cites evidence sources                │
-        └──────────────────────────────────────────┘
-                              │
-                              ▼
-        ┌──────────────────────────────────────────┐
-        │  ⚠️  COMPLIANCE GUARD AGENT (SK)         │
-        │  • Validates for off-label content       │
-        │  • Checks for promotional language       │
-        │  • Assigns risk level (LOW/MED/HIGH)     │
-        └──────────────────────────────────────────┘
-                              │
-                              ▼
-        ┌──────────────────────────────────────────┐
-        │  📄 PDF GENERATOR                        │
-        │  • Generates professional MI letter      │
-        │  • Reference number tracking             │
-        │  • Compliance disclaimers                │
-        └──────────────────────────────────────────┘
-                              │
-                              ▼
-        ┌──────────────────────────────────────────┐
-        │  📊 CRM INTEGRATION (SQLite + JSON)      │
-        │  • Logs interaction to database          │
-        │  • Exports to JSON for portability       │
-        │  • Analytics dashboard                   │
-        └──────────────────────────────────────────┘
+### Multi-Agent Design Principles
+
+1. **Separation of Concerns** - Each agent has a single, well-defined responsibility
+2. **A2A Protocol** - Standard agent-to-agent communication (extensible to external agents)
+3. **Human-in-the-Loop** - Critical decisions flagged for medical review
+4. **Compliance-First** - Automated guardrails at every step
+5. **Audit Trail** - Complete logging for regulatory inspections
+
+### Core Agents
+
+| Agent | Role | Technology | Protocol |
+|-------|------|------------|----------|
+| **Literature Scout** | Evidence retrieval from PubMed, labeling, clinical trials | Azure OpenAI GPT-4 | A2A Server (FastAPI) |
+| **Evidence Synthesizer** | GRADE assessment, structured evidence tables | Azure OpenAI GPT-4 | Local Function |
+| **MI Response Agent** | Fair-balanced response generation | Azure OpenAI GPT-4 | Orchestrator |
+| **Compliance Guard** | Regulatory risk assessment | Azure OpenAI GPT-4 | Validation Agent |
+
+### A2A Protocol
+
+The **Agent-to-Agent (A2A) Protocol** enables standardized communication between agents:
+
+```python
+# Literature Scout publishes AgentCard
+{
+  "name": "Medical Affairs Literature Scout",
+  "skills": [
+    "Literature Search & Retrieval",
+    "Evidence Quality Assessment",
+    "Dosing & Safety Guidance"
+  ],
+  "url": "http://127.0.0.1:9099/",
+  "capabilities": {"streaming": true}
+}
+
+# MI Agent calls Literature Scout via A2A
+request = SendMessageRequest(
+    id=uuid4(),
+    params=MessageSendParams(
+        message=new_agent_text_message("Renal dosing for Drug X?")
+    )
+)
+response = await a2a_client.send_message(request)
 ```
 
-### Technology Stack
-
-| Component | Technology |
-|-----------|-----------|
-| **LLM Orchestration** | Microsoft Semantic Kernel 1.0+ |
-| **Agent Protocol** | Agent-to-Agent (A2A) SDK |
-| **LLM Provider** | Azure OpenAI (GPT-4) |
-| **Backend Server** | FastAPI + Uvicorn |
-| **Frontend** | Streamlit |
-| **PDF Generation** | ReportLab |
-| **Database** | SQLite |
-| **Export** | JSON |
+**Benefits:**
+- **Reusability** - Literature Scout can serve multiple downstream agents
+- **Extensibility** - Easy to add new agents (translation, PDF generation, etc.)
+- **Scalability** - Agents can run on separate infrastructure
+- **Interoperability** - Can integrate with external A2A-compliant agents
 
 ---
 
-## 🚀 Quick Start
+## 🔀 Framework Implementations
+
+This repository includes **two complete implementations** of the same Medical Affairs system using different Microsoft agent frameworks:
+
+### 1️⃣ Semantic Kernel Implementation (`semantic-kernel/`)
+
+**Framework:** [Microsoft Semantic Kernel](https://github.com/microsoft/semantic-kernel)  
+**Status:** Legacy (maintained for comparison)
+
+- Uses `Kernel`, `AzureChatCompletion`, `KernelArguments`
+- Plugin-based architecture
+- Mature, production-tested framework
+
+📁 **See:** [`semantic-kernel/README.md`](semantic-kernel/README.md)
+
+### 2️⃣ Microsoft Agent Framework Implementation (`agent-framework/`)
+
+**Framework:** [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (NEW)  
+**Status:** Recommended for new projects
+
+- Uses `AzureOpenAIChatClient`, `ChatAgent`, `await agent.run()`
+- Native async/await support
+- Modern agent orchestration patterns
+- Enhanced A2A SDK integration
+
+📁 **See:** [`agent-framework/README.md`](agent-framework/README.md)
+
+### Framework Comparison
+
+| Feature | Semantic Kernel | Agent Framework |
+|---------|----------------|-----------------|
+| **Agent Creation** | `Kernel()` + plugins | `create_agent(name, instructions)` |
+| **Execution** | `kernel.invoke_prompt()` | `await agent.run(prompt)` |
+| **A2A Integration** | Manual setup | Native `A2AClient` |
+| **Async Support** | Partial | Full native async |
+| **Maturity** | Production-ready | Emerging (2024+) |
+| **Recommendation** | Legacy projects | New projects |
+
+**Migration Guide:** Both implementations are functionally identical. The Agent Framework version demonstrates modern patterns and is recommended for new development.
+
+---
+
+## ⚡ Quick Start
 
 ### Prerequisites
 
 - **Python 3.10+**
-- **Azure OpenAI API Access** (GPT-4 deployment)
-- **Environment Variables**:
-  ```bash
-  AZURE_OPENAI_ENDPOINT="https://your-instance.openai.azure.com/"
-  AZURE_OPENAI_API_KEY="your-api-key"
-  AZURE_OPENAI_DEPLOYMENT_NAME="gpt-4"
-  ```
+- **Azure OpenAI Service** (or OpenAI API key)
+- **VS Code** with Python extension (recommended)
 
-### Installation
+### 1. Clone Repository
 
-```bash
-# Clone the repository
-git clone https://github.com/nrs2130/medical-affairs-multi-agent.git
-cd medical-affairs-multi-agent
+```powershell
+git clone https://github.com/YOUR_USERNAME/medical_affairs_agent_framework.git
+cd medical_affairs_agent_framework
+```
 
-# Install dependencies
+### 2. Choose Framework Implementation
+
+**Option A: Agent Framework (Recommended)**
+```powershell
+cd agent-framework
+```
+
+**Option B: Semantic Kernel**
+```powershell
+cd semantic-kernel
+```
+
+### 3. Install Dependencies
+
+```powershell
 pip install -r requirements.txt
-
-# Set environment variables
-# Windows PowerShell:
-$env:AZURE_OPENAI_ENDPOINT="https://your-instance.openai.azure.com/"
-$env:AZURE_OPENAI_API_KEY="your-api-key"
-$env:AZURE_OPENAI_DEPLOYMENT_NAME="gpt-4"
-
-# Linux/Mac:
-export AZURE_OPENAI_ENDPOINT="https://your-instance.openai.azure.com/"
-export AZURE_OPENAI_API_KEY="your-api-key"
-export AZURE_OPENAI_DEPLOYMENT_NAME="gpt-4"
 ```
 
-### Running the Demo
+### 4. Configure Azure OpenAI
 
-**Option 1: Streamlit Web App (Recommended)**
-
-```bash
-# Start the Streamlit app
-streamlit run medical_affairs_app.py
-
-# App will open in browser at http://localhost:8501
+```powershell
+# PowerShell
+$env:AZURE_OPENAI_ENDPOINT='https://your-resource.openai.azure.com/'
+$env:AZURE_OPENAI_API_KEY='your-api-key-here'
+$env:AZURE_OPENAI_DEPLOYMENT_NAME='gpt-4'
+$env:AZURE_OPENAI_API_VERSION='2025-01-01-preview'
 ```
 
-**Option 2: Jupyter Notebook (Developer Mode)**
+### 5. Run Demo
 
-```bash
-# Open the notebook
+**Jupyter Notebook (Recommended):**
+```powershell
 jupyter notebook life_sciences_agent_demo.ipynb
-
-# Execute cells 1-8 to:
-# 1. Configure Azure OpenAI
-# 2. Start A2A server (Literature Scout Agent)
-# 3. Initialize Semantic Kernel agents
-# 4. Run full workflow examples
 ```
+
+**Streamlit Web UI:**
+```powershell
+streamlit run medical_affairs_app.py
+```
+
+**Access:** http://localhost:8501
 
 ---
 
-## 📖 Usage Guide
+## 🎨 Key Features
 
-### Streamlit Web App
+### 1. Regulatory Compliance
 
-#### Tab 1: Literature Scout
-- Test the evidence retrieval agent standalone
-- Enter medical queries (e.g., "What is the renal dosing for Drug X?")
-- See structured evidence with citations
+- **Off-Label Detection** - Flags uses not in approved labeling
+- **Promotional Language Guard** - Detects superlative claims, competitive comparisons
+- **Fair Balance Enforcement** - Ensures proportional safety/efficacy presentation
+- **Citation Validation** - Requires proper references for all claims
 
-#### Tab 2: Full MI Workflow
-1. **Enter HCP Query**: Type the medical information question
-2. **Run Full Workflow**: Click to execute all 3 agents in sequence
-3. **Review Results**: Evidence → MI Response → Compliance Assessment
-4. **Generate PDF**: Create professional MI letter with reference number
-5. **Log to CRM**: Record interaction with HCP details for audit trail
+### 2. Evidence Grading
 
-#### Tab 3: Compliance Check
-- Test compliance validation standalone
-- Enter evidence + proposed response
-- See risk level and specific compliance flags
+Implements **GRADE methodology** (Grading of Recommendations Assessment, Development and Evaluation):
 
-#### Tab 4: CRM Analytics
-- **Summary Metrics**: Total interactions, avg response time, pending reviews
-- **Risk Distribution**: Pie chart of LOW/MEDIUM/HIGH risk interactions
-- **Query Categories**: Bar chart of query types (dosing, DDIs, safety, etc.)
-- **Recent Interactions**: Detailed log of recent HCP inquiries
+- **High Quality:** RCTs with low risk of bias
+- **Moderate Quality:** RCTs with limitations or strong observational studies
+- **Low Quality:** Observational studies with limitations
+- **Very Low Quality:** Case series, expert opinion
 
-#### Tab 5: History
-- View all past queries and responses
-- Export session history to JSON
+### 3. Multi-Modal Output
 
-### Jupyter Notebook
+- **PDF Generation** - Professional MI letters with company letterhead
+- **CRM Integration** - SQLite database with JSON export (Veeva/Salesforce ready)
+- **Audit Trail** - Complete evidence chain for regulatory inspections
+- **Email Templates** - Ready-to-send HCP communications
 
-#### Cell 8: Start A2A Server
-```python
-# Starts Literature Scout agent on localhost:9099
-await start_a2a_server_literature_scout()
-```
+### 4. Streamlit Web UI
 
-#### Cell 9: Run Full Workflow
-```python
-# Complete MI workflow
-mi_query = "What's the renal dosing for Kerendia in severe CKD?"
-result = await run_full_mi_workflow(mi_query, A2A_BASE, kernel_B)
-```
+Interactive web interface for Medical Affairs teams:
 
-#### Cell 10: Generate PDF
-```python
-# Create professional MI letter
-ref_number = generate_mi_letter_pdf(
-    query=mi_query,
-    evidence=result['evidence'],
-    response=result['mi_response'],
-    compliance_result=result['compliance'],
-    output_filename="./mi_responses/MI_Letter.pdf"
-)
-```
+- **Single Query** - Quick evidence lookup
+- **Literature Scout Only** - Research mode
+- **Full MI Workflow** - End-to-end response generation
+- **Compliance Validation** - Test responses for regulatory risk
 
-#### Cell 11: Log to CRM
-```python
-# Record interaction in CRM database
-crm_record = crm.log_medical_information_request(
-    hcp_info={"name": "Dr. Smith, MD", "specialty": "Cardiology"},
-    query=mi_query,
-    response=result['mi_response'],
-    evidence=result['evidence'],
-    compliance_result=result['compliance'],
-    pdf_path="./mi_responses/MI_Letter.pdf",
-    ref_number=ref_number
-)
-```
+---
 
-#### Cell 12: SQL Queries
-```python
-# Find high-risk interactions
-high_risk = crm.query_database('''
-    SELECT * FROM mi_interactions 
-    WHERE compliance_risk_level = 'HIGH'
-''')
+## 🧪 Demo Scenarios
 
-# Count by HCP
-by_hcp = crm.query_database('''
-    SELECT hcp_name, COUNT(*) as count
-    FROM mi_interactions
-    GROUP BY hcp_name
-''')
-```
+### Scenario 1: Renal Dosing Inquiry
+**Query:** "What's the renal dosing guidance for Drug X in severe CKD?"  
+**Expected Output:** On-label guidance + clinical PK studies + dose adjustment recommendations
+
+### Scenario 2: Drug-Drug Interaction
+**Query:** "Are there any interactions between Drug X and warfarin?"  
+**Expected Output:** FDA labeling warnings + clinical interaction studies + monitoring recommendations
+
+### Scenario 3: Off-Label Use (High Risk)
+**Query:** "Can Drug X be used in pediatric patients?"  
+**Expected Output:** No pediatric indication → HIGH RISK → Route to medical review
+
+### Scenario 4: Adverse Event Inquiry
+**Query:** "What were the most common adverse events in pivotal trials?"  
+**Expected Output:** FDA labeling AE table + pivotal trial data with incidence rates
 
 ---
 
 ## 📁 Project Structure
 
 ```
-medical-affairs-multi-agent/
+medical_affairs_agent_framework/
 │
-├── medical_affairs_app.py          # Streamlit web application
-├── life_sciences_agent_demo.ipynb  # Jupyter notebook demo
+├── README.md                          ← You are here
+├── LICENSE
+├── .gitignore
+├── .env.example                       ← Template for environment variables
 │
-├── crm_data/                        # CRM persistent storage (auto-created)
-│   ├── medical_affairs.db          # SQLite database
-│   └── interactions.json           # JSON export
+├── agent-framework/                   ← Microsoft Agent Framework implementation ⭐
+│   ├── README.md                      ← Setup instructions
+│   ├── requirements.txt               ← Python dependencies
+│   ├── medical_affairs_app.py         ← Streamlit web UI
+│   ├── life_sciences_agent_demo.ipynb ← Jupyter notebook demo
+│   ├── grade_evidence_agent.py        ← GRADE assessment module
+│   ├── launch_streamlit.ps1           ← PowerShell launcher
+│   ├── azure_agent_registration.json  ← Azure AI Foundry config
+│   ├── crm_data/                      ← Generated: SQLite CRM database
+│   │   ├── medical_affairs.db
+│   │   └── interactions.json
+│   └── mi_responses/                  ← Generated: PDF responses
+│       └── MI_Response_*.pdf
 │
-├── mi_responses/                    # Generated PDF letters (auto-created)
-│   └── MI_Response_*.pdf
-│
-├── requirements.txt                 # Python dependencies
-├── README.md                        # This file
-├── README_PDF_GENERATION.md         # PDF generation documentation
-├── README_CRM_INTEGRATION.md        # CRM integration documentation
-└── BUGFIX_WORKFLOW_BUTTONS.md       # Technical notes on Streamlit fix
+└── semantic-kernel/                   ← Semantic Kernel implementation (legacy)
+    ├── README.md                      ← Setup instructions
+    ├── requirements.txt               ← Python dependencies
+    ├── medical_affairs_app.py         ← Streamlit web UI
+    ├── life_sciences_agent_demo.ipynb ← Jupyter notebook demo
+    ├── grade_evidence_agent.py        ← GRADE assessment module
+    ├── crm_data/                      ← Generated: SQLite CRM database (if run)
+    └── mi_responses/                  ← Generated: PDF responses (if run)
 ```
+
+**Note:** Each framework folder is **self-contained** and runnable independently. The `crm_data/` and `mi_responses/` folders are created at runtime when you run the demos.
 
 ---
 
-## 🔧 Configuration
+## 🛠️ Technology Stack
 
-### Azure OpenAI Setup
+### Core Frameworks
 
-1. **Create Azure OpenAI Resource**: [Azure Portal](https://portal.azure.com/)
-2. **Deploy GPT-4 Model**: Note your deployment name
-3. **Get API Credentials**:
-   - Endpoint: `https://your-instance.openai.azure.com/`
-   - API Key: From "Keys and Endpoint" section
-4. **Set Environment Variables** (see Installation section)
+- **Microsoft Agent Framework** - Modern agent orchestration (recommended)
+- **Semantic Kernel** - Legacy plugin-based framework (maintained)
+- **A2A SDK** - Agent-to-agent protocol implementation
+- **FastAPI** - High-performance agent server
+- **Streamlit** - Interactive web UI
 
-### A2A Server Configuration
+### AI/ML
 
-The Literature Scout agent runs on **localhost:9099** by default. To change:
+- **Azure OpenAI Service** - GPT-4 for evidence synthesis
+- **Azure AI Foundry** - Agent management and deployment (optional)
+- **LangChain** - Document loading and chunking (optional)
 
-```python
-# In life_sciences_agent_demo.ipynb or medical_affairs_app.py
-A2A_PORT = 9099  # Change to desired port
-A2A_BASE = f"http://127.0.0.1:{A2A_PORT}"
-```
+### Data & Storage
 
-### CRM Storage Location
+- **SQLite** - CRM activity logging
+- **ReportLab** - Professional PDF generation
+- **httpx** - Async HTTP client for A2A communication
 
-CRM data is stored in `./crm_data/` by default. To change:
+### Development
 
-```python
-crm = MedicalCRMIntegration(
-    db_path="./custom_path/crm.db",
-    json_path="./custom_path/interactions.json"
-)
-```
+- **Jupyter** - Interactive notebook development
+- **Python 3.10+** - Modern async/await support
+- **Pydantic** - Data validation and serialization
 
 ---
 
-## 📊 CRM Data Structure
+## 🚀 Deployment
 
-### SQLite Database Schema
-
-```sql
-CREATE TABLE mi_interactions (
-    record_id TEXT PRIMARY KEY,
-    timestamp TEXT NOT NULL,
-    mi_reference_number TEXT UNIQUE,
-    
-    -- HCP Information
-    hcp_name TEXT,
-    hcp_specialty TEXT,
-    hcp_institution TEXT,
-    
-    -- Query Details
-    query_text TEXT,
-    query_category TEXT,
-    products_mentioned TEXT,  -- JSON array
-    
-    -- Response
-    response_provided TEXT,
-    pdf_attachment TEXT,
-    
-    -- Compliance
-    compliance_risk_level TEXT,
-    requires_follow_up BOOLEAN,
-    
-    -- Audit
-    approved_by TEXT,
-    system_generated BOOLEAN,
-    ai_assisted BOOLEAN,
-    
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+### Local Development
+```powershell
+streamlit run medical_affairs_app.py
 ```
 
-### JSON Export Format
-
-```json
-[
-  {
-    "record_id": "CRM-20241024143022",
-    "timestamp": "2024-10-24T14:30:22",
-    "mi_reference": "MI-20241024-143020",
-    "hcp_name": "Dr. Emily Chen, MD",
-    "hcp_specialty": "Cardiology",
-    "query_text": "What's the renal dosing for Kerendia in severe CKD?",
-    "query_category": "Special Populations - Organ Impairment",
-    "products_mentioned": ["Kerendia"],
-    "compliance_risk": "LOW",
-    "status": "Auto-Approved"
-  }
-]
+### Docker Container (Production)
+```dockerfile
+FROM python:3.10-slim
+WORKDIR /app
+COPY agent-framework/requirements.txt .
+RUN pip install -r requirements.txt
+COPY agent-framework/ .
+CMD ["streamlit", "run", "medical_affairs_app.py", "--server.port=8501"]
 ```
 
----
+### Azure Deployment Options
 
-## 🎯 Use Cases
+1. **Azure Container Apps** - Serverless container deployment
+2. **Azure App Service** - Managed web app hosting
+3. **Azure AI Foundry** - Full agent lifecycle management
+4. **Azure Functions** - Event-driven serverless
 
-### 1. Medical Information Requests
-**Scenario**: HCP calls with dosing question  
-**Workflow**: Literature Scout → MI Agent → Compliance Guard → PDF → CRM  
-**Outcome**: Compliant response in seconds vs. hours
-
-### 2. Field Medical Support
-**Scenario**: MSL needs quick evidence for HCP meeting  
-**Workflow**: Literature Scout → Evidence summary  
-**Outcome**: Real-time evidence retrieval in the field
-
-### 3. Compliance Audits
-**Scenario**: FDA inspection requires MI audit trail  
-**Workflow**: SQL query on CRM database  
-**Outcome**: Complete interaction history with risk levels
-
-### 4. Medical Review Queue
-**Scenario**: High-risk responses need medical review  
-**Workflow**: Compliance Guard flags → Medical reviewer dashboard  
-**Outcome**: Automated triage, human-in-loop for risky content
-
----
-
-## 🚧 Production Deployment Considerations
-
-### Security
-- [ ] Implement authentication (Azure AD, OAuth)
-- [ ] Add role-based access control (RBAC)
-- [ ] Encrypt sensitive data at rest
-- [ ] Use Azure Key Vault for API keys
-- [ ] Enable HTTPS/TLS for all endpoints
-
-### Scalability
-- [ ] Deploy A2A server to Azure Container Apps
-- [ ] Use Azure App Service for Streamlit frontend
-- [ ] Implement Redis caching for frequently requested evidence
-- [ ] Add load balancing for multi-user support
-- [ ] Monitor with Application Insights
-
-### Compliance (21 CFR Part 11)
-- [ ] Add electronic signatures for approvals
-- [ ] Implement audit trail with timestamps
-- [ ] Add data integrity checks (checksums)
-- [ ] Implement user access logs
-- [ ] Add retention policies
-
-### Integration
-- [ ] Connect to real Veeva Medical CRM API
-- [ ] Integrate with internal document repositories (Veeva Vault, SharePoint)
-- [ ] Add PubMed API for real-time literature search
-- [ ] Connect to clinical trial databases (ClinicalTrials.gov)
-- [ ] Implement email notifications for high-risk content
-
-### Monitoring
-- [ ] Add LLM usage tracking (token costs)
-- [ ] Monitor response quality (human feedback loop)
-- [ ] Track compliance flag accuracy
-- [ ] Alert on high-risk patterns
-- [ ] Dashboard for Medical Affairs leadership
-
-### Azure AI Foundry Integration
-- [ ] Register agents in Azure AI Foundry agent registry
-- [ ] Enable Azure Monitor tracing for all agent interactions
-- [ ] Set up Application Insights dashboards
-- [ ] Configure alerting for agent errors or performance issues
-- [ ] Implement evaluation metrics (quality scores, compliance accuracy)
-- [ ] Use AI Foundry evaluation framework for continuous improvement
-
----
-
-## 🔍 Azure AI Foundry Integration
-
-The system includes optional integration with **Azure AI Foundry** (formerly Azure AI Studio) for enterprise-grade agent management and monitoring.
-
-### Features
-
-- **Agent Registry**: Centralized catalog of all agents with metadata
-- **Performance Tracking**: Real-time metrics (latency, success rate, error count)
-- **Interaction Tracing**: Complete audit trail across multi-agent workflows
-- **Azure Monitor Integration**: Stream telemetry to Application Insights
-- **Evaluation Framework**: Assess agent quality over time
-- **Production Dashboards**: Visual analytics in Azure portal
-
-### Setup (Production)
-
-1. **Install Azure AI packages**:
-   ```bash
-   pip install azure-ai-projects azure-identity azure-monitor-opentelemetry
-   ```
-
-2. **Set environment variables**:
-   ```powershell
-   $env:AZURE_AI_PROJECT_CONNECTION_STRING="<your-connection-string>"
-   $env:AZURE_AI_PROJECT_NAME="medical-affairs-agents"
-   ```
-
-3. **Run the AI Foundry integration cells** in the Jupyter notebook (Section 7b)
-
-4. **View in Azure Portal**:
-   - Navigate to Azure AI Foundry
-   - View registered agents in the agent registry
-   - Access performance dashboards
-   - Set up alerts for anomalies
-
-### Demo Mode
-
-For demonstration purposes, the system uses a **local registry** that:
-- Saves agent metadata to `./ai_foundry_registry/agent_registry.json`
-- Tracks interactions in `./ai_foundry_registry/interactions.json`
-- Exports data in Azure AI Foundry-compatible format
-
-This provides the same tracking capabilities without requiring Azure infrastructure.
+**See:** [Deployment Guide](docs/DEPLOYMENT.md) *(coming soon)*
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please:
+Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+### Areas for Contribution
 
----
-
-## 📝 License
-
-This project is provided for **demonstration and educational purposes**. Please ensure compliance with:
-- Your organization's data privacy policies
-- HIPAA regulations (if handling PHI)
-- FDA regulations (21 CFR Part 11 for electronic records)
-- Azure OpenAI terms of service
+- [ ] Real PubMed API integration (replace mock data)
+- [ ] Veeva Vault integration for approved labeling
+- [ ] Salesforce/Veeva CRM connectors
+- [ ] Multi-language support (translate MI responses)
+- [ ] Advanced GRADE evidence tables
+- [ ] Unit tests and integration tests
+- [ ] CI/CD pipelines
 
 ---
 
-## 👨‍💻 Author
+## 📄 License
 
-**Nick Stewart**  
-GitHub: [@nrs2130](https://github.com/nrs2130)
-
----
-
-## 🙏 Acknowledgments
-
-- **Microsoft Semantic Kernel Team**: LLM orchestration framework
-- **Microsoft A2A Team**: Agent-to-Agent protocol
-- **Azure OpenAI**: GPT-4 model access
-- **Streamlit**: Rapid web app development
-- **Pharmaceutical Medical Affairs Community**: Domain expertise
+This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## 📚 Additional Resources
+## 📞 Contact
 
+**Nicholas Stewart, PhD**  
+Senior Data & AI Specialist, Microsoft
+
+- 📧 Email: [nistewart@microsoft.com](mailto:nistewart@microsoft.com)
+- 💼 LinkedIn: [linkedin.com/in/nicholas-stewart-phd](https://www.linkedin.com/in/nicholas-stewart-phd/)
+- 🐙 GitHub: [@nistewart-msft](https://github.com/nistewart-msft)
+
+### Acknowledgments
+
+- **Microsoft Agent Framework Team** - For the modern agent orchestration framework
+- **Microsoft Semantic Kernel Team** - For the foundational plugin architecture
+- **A2A Protocol Contributors** - For agent interoperability standards
+- **Pharmaceutical Medical Affairs Community** - For domain expertise and feedback
+
+---
+
+## 🔗 Related Resources
+
+- [Microsoft Agent Framework Documentation](https://github.com/microsoft/agent-framework)
 - [Semantic Kernel Documentation](https://learn.microsoft.com/en-us/semantic-kernel/)
-- [Agent-to-Agent Protocol Spec](https://github.com/microsoft/agent-to-agent)
+- [A2A Protocol Specification](https://github.com/microsoft/A2A)
 - [Azure OpenAI Service](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
-- [FDA Guidance on Medical Information](https://www.fda.gov/regulatory-information/search-fda-guidance-documents)
-- [Veeva Medical CRM](https://www.veeva.com/products/veeva-crm/)
+- [GRADE Evidence Quality](https://www.gradeworkinggroup.org/)
+- [FDA Guidance: Medical Information](https://www.fda.gov/regulatory-information/search-fda-guidance-documents)
 
 ---
 
-## ❓ FAQ
-
-**Q: Can this replace Medical Affairs teams?**  
-A: No. This is an **AI-assisted tool** that augments human experts. High-risk content is flagged for medical review. Final approval remains with qualified medical professionals.
-
-**Q: Is the evidence retrieval real?**  
-A: The current demo uses **simulated responses** from the Literature Scout. In production, you would integrate with:
-- PubMed API for real literature
-- Internal document repositories (Veeva Vault)
-- FDA label database (DailyMed)
-
-**Q: How accurate is the Compliance Guard?**  
-A: The LLM-based compliance check is a **first-pass filter**, not a replacement for regulatory review. It can catch obvious issues (off-label claims, promotional language) but should be validated by trained Medical Information professionals.
-
-**Q: Can I use this with other LLMs?**  
-A: Yes! The system uses Semantic Kernel, which supports:
-- Azure OpenAI
-- OpenAI API
-- Other LLM providers (with appropriate connectors)
-
-**Q: How does the CRM integration work in production?**  
-A: The current implementation uses **SQLite + JSON** for demo purposes. In production, replace the storage layer with:
-- Veeva CRM API (`POST /api/v21.1/objects/medical_insight__c`)
-- Salesforce Health Cloud API
-- Custom REST endpoints
-
-**Q: Is this HIPAA compliant?**  
-A: The demo does **not** handle PHI (Protected Health Information). For HIPAA compliance:
-- Deploy in Azure with HIPAA BAA
-- Enable encryption at rest/in transit
-- Implement access controls and audit logs
-- Avoid storing patient identifiers
+**⚠️ Disclaimer:** This is a demonstration system for educational and prototyping purposes. For production use in pharmaceutical Medical Affairs, consult with regulatory, legal, and compliance teams to ensure adherence to all applicable regulations (FDA, EMA, etc.). Always implement human review for medical information responses.
 
 ---
 
-## 🚀 Roadmap
-
-- [ ] **Multi-language Support**: Translate MI responses to Spanish, French, etc.
-- [ ] **Voice Interface**: Alexa/Google Home integration for MSLs in the field
-- [ ] **Mobile App**: React Native app for on-the-go MI requests
-- [ ] **Advanced Analytics**: Power BI dashboard for Medical Affairs leadership
-- [ ] **RAG Enhancement**: Vector database (Pinecone/Weaviate) for better evidence retrieval
-- [ ] **Agent Marketplace**: Share custom agents (Pharmacovigilance Agent, Label Comparison Agent)
-
----
-
-## 📞 Support
-
-For questions or issues:
-- **GitHub Issues**: [Create an issue](https://github.com/nrs2130/medical-affairs-multi-agent/issues)
-- **Email**: nistewart@microsoft.com (replace with actual)
-- **LinkedIn**: [Nick Stewart](https://www.linkedin.com/in/nicholas-stewart-phd/)
-
----
-
-**⭐ If you find this project useful, please star the repository!**
-
----
-
-*Last Updated: October 2025*
+**Built with ❤️ by Microsoft Data & AI Specialists**
