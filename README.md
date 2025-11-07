@@ -259,27 +259,58 @@ pip install -r requirements.txt
 
 ### 4. Configure Azure OpenAI
 
+Create a `.env` file in the root directory (copy from `.env.example`):
+
+```bash
+# Copy the example file
+cp .env.example .env
+```
+
+Edit `.env` with your Azure OpenAI credentials:
+
+```bash
+# Azure OpenAI Configuration
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_API_KEY=your-api-key-here
+AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
+AZURE_OPENAI_API_VERSION=2025-01-01-preview
+
+# A2A Server Configuration (optional - defaults shown)
+A2A_HOST=127.0.0.1
+A2A_PORT=9099
+```
+
+**PowerShell Alternative** (if not using `.env` file):
 ```powershell
-# PowerShell
 $env:AZURE_OPENAI_ENDPOINT='https://your-resource.openai.azure.com/'
 $env:AZURE_OPENAI_API_KEY='your-api-key-here'
-$env:AZURE_OPENAI_DEPLOYMENT_NAME='gpt-4'
+$env:AZURE_OPENAI_DEPLOYMENT_NAME='gpt-4o'
 $env:AZURE_OPENAI_API_VERSION='2025-01-01-preview'
 ```
 
 ### 5. Run Demo
 
-**Jupyter Notebook (Recommended):**
-```powershell
-jupyter notebook life_sciences_agent_demo.ipynb
-```
-
-**Streamlit Web UI:**
+**Option A: Streamlit Web UI (✨ Easiest - Fully Automatic):**
 ```powershell
 streamlit run medical_affairs_app.py
 ```
+- **Access:** http://localhost:8501
+- **Auto-Configuration Features:** 
+  - ✅ Automatically loads credentials from `.env` file
+  - ✅ Automatically starts A2A Literature Scout server on port 9099
+  - ✅ No need to run notebook cells first
+  - ✅ No need to manually enter credentials in UI
+  - ✅ Server status indicator in sidebar
+  - ✅ Retry button if server fails to start
+  - 🎉 **Just launch and use immediately!**
 
-**Access:** http://localhost:8501
+**Option B: Jupyter Notebook (For development/customization):**
+```powershell
+jupyter notebook life_sciences_agent_demo.ipynb
+```
+- **Note:** Run cells 1-9 to manually start A2A server
+- **Use case:** When you want to customize agent behavior or prompts
+- **Tip:** Streamlit will detect and use an existing notebook-launched server
 
 ---
 
@@ -316,6 +347,200 @@ Interactive web interface for Medical Affairs teams:
 - **Literature Scout Only** - Research mode
 - **Full MI Workflow** - End-to-end response generation
 - **Compliance Validation** - Test responses for regulatory risk
+
+### 5. Azure AI Foundry Tracing & Evaluation
+
+Enterprise-grade observability and quality assessment for production deployments:
+
+#### 📊 Performance Tracing
+
+- **Execution Timelines** - Visualize agent call sequences
+- **Token Usage Tracking** - Monitor Azure OpenAI consumption per agent
+- **Latency Metrics** - Identify performance bottlenecks
+- **Input/Output Capture** - See exact prompts and responses
+- **Compliance Audit Trail** - Track what agents said and when
+
+#### 🎯 Quality Evaluation
+
+- **Groundedness** (1-5) - How well grounded in retrieved evidence
+- **Relevance** (1-5) - How relevant to the medical query
+- **Coherence** (1-5) - Logical flow and consistency
+- **Fluency** (1-5) - Language quality and readability
+- **Custom Medical Affairs Metrics** - Compliance risk, medical accuracy, citation quality
+
+**Quick Setup:**
+```bash
+# Add to .env file
+AI_FOUNDRY_PROJECT_ENDPOINT=https://your-project.services.ai.azure.com/api/projects/your-project
+APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...
+OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+```
+
+**Enable in Code:**
+```python
+# Tracing
+from ai_foundry.ai_foundry_tracing import setup_tracing
+setup_tracing()  # Auto-configures from .env
+
+# Evaluation (automatically runs in Full MI Workflow)
+from ai_foundry.ai_foundry_evaluation import AIFoundryEvaluation
+evaluator = AIFoundryEvaluation()
+await evaluator.setup_evaluation()
+results = await evaluator.evaluate_response(query, response, context)
+```
+
+View traces and evaluation results in [Azure AI Foundry Portal](https://ai.azure.com) → Your Project → **Tracing**
+
+📖 **See:** [Complete Tracing Guide](agent-framework/ai_foundry/TRACING_GUIDE.md)
+
+---
+
+## 📊 Quality Evaluation
+
+### Understanding Evaluation Metrics
+
+The system automatically evaluates every Medical Information response for quality using Azure AI Foundry's evaluation framework. This provides objective, quantifiable metrics alongside the qualitative GRADE evidence assessment and compliance risk score.
+
+### Built-in Evaluators (1-5 Scale)
+
+| Metric | What It Measures | Good Score | Bad Score |
+|--------|------------------|------------|-----------|
+| **Groundedness** | How well the response is grounded in the retrieved evidence | 4-5: All claims cited | 1-2: Unsupported claims |
+| **Relevance** | How relevant the response is to the medical query | 4-5: Directly answers question | 1-2: Off-topic |
+| **Coherence** | Logical flow and internal consistency | 4-5: Clear structure | 1-2: Contradictory |
+| **Fluency** | Language quality and readability | 4-5: Professional writing | 1-2: Grammatical errors |
+
+### Custom Medical Affairs Evaluators
+
+| Metric | What It Measures | Threshold | Action |
+|--------|------------------|-----------|--------|
+| **Compliance Risk** | Off-label content, promotional language | HIGH | Route to medical review |
+| **Medical Accuracy** | Correct dosing, safety information | LOW | Flag for correction |
+| **Citation Quality** | Proper references, peer-reviewed sources | MODERATE | Improve citations |
+
+### How Evaluation Works
+
+```python
+# Evaluation runs automatically as Step 5 in Full MI Workflow
+results = {
+    "evidence": [...],           # Step 1: Literature Scout
+    "grade_assessment": {...},   # Step 2: GRADE Evidence Quality
+    "response": "...",           # Step 3: MI Response Generation
+    "compliance": {...},         # Step 4: Compliance Guard
+    "evaluation": {              # Step 5: Quality Evaluation (NEW)
+        "groundedness": 4.5,
+        "relevance": 5.0,
+        "coherence": 4.8,
+        "fluency": 4.6,
+        "overall_quality": "HIGH"
+    }
+}
+```
+
+### Viewing Evaluation Results
+
+**In Streamlit UI:**
+- Run **Full MI Workflow** from the sidebar
+- Scroll to **"🎯 AI Quality Evaluation"** section after Unified Assessment
+- See color-coded scores: 🟢 Green (4-5) | 🟡 Yellow (3-4) | 🔴 Red (1-3)
+
+**In Azure AI Foundry Portal:**
+- Navigate to your project → **Evaluation**
+- View batch evaluation results and trends over time
+- Compare different prompts or models
+
+### Best Practices
+
+✅ **Monitor Trends** - Track evaluation scores over time to identify improvement opportunities  
+✅ **Set Thresholds** - Define minimum acceptable scores (e.g., Groundedness ≥ 4.0)  
+✅ **Correlate with Outcomes** - Compare evaluation scores to medical review feedback  
+✅ **Batch Evaluate** - Use `evaluate_batch()` to test prompt changes before deployment  
+
+### Troubleshooting
+
+**Q: Evaluation shows "Error: Missing required parameters"**  
+**A:** Ensure `AI_FOUNDRY_PROJECT_ENDPOINT` is set in `.env` file
+
+**Q: Evaluation scores seem incorrect**  
+**A:** Check that `context` parameter includes actual retrieved evidence, not just query/response
+
+**Q: How do I customize evaluators?**  
+**A:** See `ai_foundry_evaluation.py` → `add_medical_affairs_evaluators()` for examples
+
+---
+
+## 🔧 Troubleshooting
+
+### A2A Server Shows "Not Running" (Red Status)
+
+**Symptom:** Streamlit sidebar shows "🔴 A2A Server: Not Running"
+
+**Cause:** Auto-start failed, usually due to missing or incorrect credentials in `.env` file
+
+**Solutions:**
+
+1. **Check `.env` file exists and has correct values:**
+   ```powershell
+   # Verify .env file exists in root directory
+   ls .env
+   
+   # Check contents
+   Get-Content .env
+   ```
+
+2. **Click "🔄 Retry Server Start"** button in Streamlit sidebar
+
+3. **Check for port conflicts:**
+   ```powershell
+   # See if port 9099 is already in use
+   Get-NetTCPConnection -LocalPort 9099 -State Listen
+   
+   # If yes, stop the process
+   Get-NetTCPConnection -LocalPort 9099 | Stop-Process
+   ```
+
+4. **Manual server start (fallback):**
+   ```powershell
+   # Open notebook and run cells 1-9
+   jupyter notebook agent-framework/life_sciences_agent_demo.ipynb
+   ```
+
+### "Auto-configured from .env file" Not Appearing
+
+**Symptom:** Credentials not loading automatically
+
+**Solutions:**
+
+1. **Ensure `.env` file is in the root directory** (not in agent-framework/ subfolder)
+
+2. **Check `.env` file format:**
+   ```bash
+   # Correct (no spaces around =)
+   AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+   AZURE_OPENAI_API_KEY=your-key
+   AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
+   ```
+
+3. **Restart Streamlit** (Ctrl+C, then relaunch)
+
+### Azure OpenAI Connection Errors
+
+**Symptom:** "Error: 401 Unauthorized" or "Deployment not found"
+
+**Solutions:**
+
+1. **Verify endpoint URL format:**
+   ```bash
+   # Correct
+   AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+   
+   # Incorrect (remove /openai/)
+   AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/openai/ ❌
+   ```
+
+2. **Check deployment name matches your Azure resource**
+
+3. **Use API version: 2025-01-01-preview or later**
 
 ---
 

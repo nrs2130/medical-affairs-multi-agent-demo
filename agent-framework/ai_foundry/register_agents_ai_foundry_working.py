@@ -28,9 +28,9 @@ PROJECT_NAME = os.getenv("AZURE_AI_PROJECT_NAME", "")
 # Validate configuration
 if not ENDPOINT or not API_KEY:
     print("=" * 80)
-    print("ERROR: Missing Azure AI Foundry credentials!")
+    print("❌ ERROR: Missing Azure AI Foundry credentials!")
     print("=" * 80)
-    print("\nSetup Instructions:")
+    print("\n📋 Setup Instructions:")
     print("1. Copy .env.example to .env")
     print("2. Fill in your Azure AI Foundry endpoint and API key")
     print("3. Run this script again\n")
@@ -138,11 +138,11 @@ class AzureAIFoundryClient:
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            print(f"\nHTTP Error {e.response.status_code}")
+            print(f"\n❌ HTTP Error {e.response.status_code}")
             print(f"Response: {e.response.text[:500]}")
             raise
         except Exception as e:
-            print(f"\nError creating agent: {e}")
+            print(f"\n❌ Error creating agent: {e}")
             raise
     
     def list_agents(self) -> List[Dict[str, Any]]:
@@ -156,7 +156,7 @@ class AzureAIFoundryClient:
                 data = response.json()
                 return data.get("data", data.get("value", []))
         except Exception as e:
-            print(f"WARNING: Could not list agents: {e}")
+            print(f"⚠️  Could not list agents: {e}")
             return []
 
 
@@ -167,23 +167,23 @@ class AzureAIFoundryClient:
 def register_all_agents():
     """Register all Medical Affairs agents in Azure AI Foundry."""
     print("=" * 80)
-    print("Medical Affairs Multi-Agent System - Azure AI Foundry Registration")
+    print("🏥 Medical Affairs Multi-Agent System - Azure AI Foundry Registration")
     print("=" * 80)
-    print(f"\nEndpoint: {ENDPOINT}")
-    print(f"Project: {PROJECT_NAME}")
-    print(f"API Key: {'*' * 20}{API_KEY[-10:] if API_KEY else 'NOT SET'}\n")
+    print(f"\n📍 Endpoint: {ENDPOINT}")
+    print(f"📦 Project: {PROJECT_NAME}")
+    print(f"🔑 API Key: {'*' * 20}{API_KEY[-10:] if API_KEY else 'NOT SET'}\n")
     
     # Initialize client
     client = AzureAIFoundryClient(ENDPOINT, API_KEY)
     
     # Check existing agents
-    print("Checking existing agents...")
+    print("🔍 Checking existing agents...")
     try:
         existing_agents = client.list_agents()
         existing_names = {agent.get("name") for agent in existing_agents}
         print(f"   Found {len(existing_agents)} existing agents\n")
     except Exception as e:
-        print(f"   WARNING: Could not list existing agents: {e}")
+        print(f"   ⚠️  Could not list existing agents: {e}")
         print("   Continuing with registration...\n")
         existing_names = set()
     
@@ -196,46 +196,58 @@ def register_all_agents():
         agent_name = agent_config["name"]
         
         if agent_name in existing_names:
-            print(f">> Skipping '{agent_name}' (already registered)")
+            print(f"⏭️  Skipping '{agent_name}' (already registered)")
             skipped.append(agent_name)
             continue
         
-        print(f"Registering: {agent_name}")
+        print(f"📝 Registering: {agent_name}")
         try:
             result = client.create_agent(agent_config)
             agent_id = result.get("id", "unknown")
-            print(f"   SUCCESS! (ID: {agent_id})")
+            print(f"   ✅ Success! (ID: {agent_id})")
             registered.append({
                 "name": agent_name,
                 "id": agent_id,
                 "created_at": result.get("created_at")
             })
         except Exception as e:
-            print(f"   FAILED: {str(e)[:100]}")
+            print(f"   ❌ Failed: {str(e)[:100]}")
             failed.append(agent_name)
     
     # Summary
     print("\n" + "=" * 80)
-    print(f"Registration Summary")
+    print(f"📊 Registration Summary")
     print("=" * 80)
-    print(f"Registered: {len(registered)}")
-    print(f"Skipped: {len(skipped)}")
-    print(f"Failed: {len(failed)}\n")
+    print(f"✅ Registered: {len(registered)}")
+    print(f"⏭️  Skipped: {len(skipped)}")
+    print(f"❌ Failed: {len(failed)}\n")
     
     if registered:
-        print("Successfully registered agents:")
+        print("🎉 Successfully registered agents:")
         for agent in registered:
-            print(f"   - {agent['name']}")
+            print(f"   • {agent['name']}")
             print(f"     ID: {agent['id']}\n")
     
     if failed:
-        print("Failed to register:")
+        print("⚠️  Failed to register:")
         for name in failed:
-            print(f"   - {name}")
+            print(f"   • {name}")
         print()
     
-    print("View your agents in Azure Portal:")
+    print("🌐 View your agents in Azure Portal:")
     print("   https://ai.azure.com/\n")
+    
+    # Save registration details
+    if registered:
+        output_file = "azure_agent_registration.json"
+        with open(output_file, "w") as f:
+            json.dump({
+                "registered_at": datetime.now().isoformat(),
+                "endpoint": ENDPOINT,
+                "project": PROJECT_NAME,
+                "agents": registered
+            }, f, indent=2)
+        print(f"💾 Registration details saved to: {output_file}\n")
 
 
 # ============================================================================
@@ -246,9 +258,9 @@ if __name__ == "__main__":
     try:
         register_all_agents()
     except KeyboardInterrupt:
-        print("\n\nRegistration cancelled by user")
+        print("\n\n⏸️  Registration cancelled by user")
     except Exception as e:
-        print(f"\nFatal error: {e}")
+        print(f"\n💥 Fatal error: {e}")
         import traceback
         traceback.print_exc()
         exit(1)

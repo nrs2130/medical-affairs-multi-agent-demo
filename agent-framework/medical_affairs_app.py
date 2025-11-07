@@ -16,6 +16,12 @@ from datetime import datetime
 from pathlib import Path
 import httpx
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+# Load from parent directory if not found in current directory
+load_dotenv()
+load_dotenv(Path(__file__).parent.parent / '.env')
+
 # Microsoft Agent Framework imports
 from agent_framework.azure import AzureOpenAIChatClient
 from agent_framework import ChatAgent
@@ -877,6 +883,201 @@ class MedicalCRMIntegration:
         # Clear JSON
         self._save_to_json()
 
+# ============================================================================
+# A2A Server Auto-Start
+# ============================================================================
+
+def is_port_in_use(port):
+    """Check if a port is already in use"""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(('127.0.0.1', port))
+            return False
+        except OSError:
+            return True
+
+def start_a2a_server_if_needed():
+    """Start the A2A Literature Scout server if not already running"""
+    import socket
+    import threading
+    import time
+    import uvicorn
+    from fastapi import FastAPI, HTTPException, Request
+    from a2a.server.apps import A2AStarletteApplication
+    from a2a.server.request_handlers import DefaultRequestHandler
+    from a2a.server.tasks import InMemoryTaskStore
+    from a2a.server.agent_execution import AgentExecutor, RequestContext
+    from a2a.server.events import EventQueue
+    from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+    from a2a.utils.message import new_agent_text_message
+    from agent_framework.azure import AzureOpenAIChatClient
+    from azure.identity.aio import AzureCliCredential
+    
+    # Get configuration from environment
+    A2A_PORT = int(os.getenv('A2A_PORT', '9099'))
+    A2A_HOST = os.getenv('A2A_HOST', '127.0.0.1')
+    A2A_BASE = os.getenv('A2A_BASE', f'http://{A2A_HOST}:{A2A_PORT}')
+    
+    # Check if server is already running
+    if is_port_in_use(A2A_PORT):
+        print(f"✅ A2A server already running on port {A2A_PORT}")
+        return True
+    
+    # Start the A2A server
+    print(f"🚀 Starting A2A Literature Scout server on port {A2A_PORT}...")
+    
+    try:
+        # Get Azure OpenAI configuration
+        AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT')
+        AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', 'gpt-4o')
+        
+        if not AZURE_OPENAI_ENDPOINT:
+            print("⚠️ Warning: AZURE_OPENAI_ENDPOINT not set. Server may not work correctly.")
+            return False
+        
+        # Create Agent Framework client
+        chat_client_A = AzureOpenAIChatClient(
+            credential=AzureCliCredential(),
+            endpoint=AZURE_OPENAI_ENDPOINT,
+            deployment_name=AZURE_OPENAI_DEPLOYMENT_NAME
+        )
+        
+        SYSTEM_PROMPT_A = (
+            'You are LiteratureScoutAgent, a specialized Medical Affairs agent for pharmaceutical companies. '
+            'Your role: Search and retrieve relevant scientific literature, product labeling, and clinical evidence. '
+            'For any drug-related query, provide:\n'
+            '1. Current FDA-approved labeling excerpt (if applicable)\n'
+            '2. 2-3 high-quality clinical studies (PubMed-style citations)\n'
+            '3. Study quality indicators (RCT, observational, N=, year)\n'
+            '4. Key findings relevant to the query\n\n'
+            'Format as structured evidence. Be factual and citation-focused. '
+            'IMPORTANT: Clearly mark if information is from approved labeling vs. external literature.'
+        )
+        
+        # Create the Literature Scout Agent
+        literature_scout_agent = chat_client_A.create_agent(
+            name="LiteratureScoutAgent",
+            instructions=SYSTEM_PROMPT_A,
+            tools=[]
+        )
+        
+        class LiteratureScoutAgentExecutor(AgentExecutor):
+            async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+                user_text = context.get_user_input() or ''
+                prompt = f"{SYSTEM_PROMPT_A}\n\nMedical Affairs Query: {user_text}\n\nProvide structured evidence in this format:\n\n**APPROVED LABELING:**\n[Relevant excerpt]\n\n**PUBLISHED LITERATURE:**\n1. [Study 1 with citation, study type, N=, key finding]\n2. [Study 2...]\n3. [Study 3...]\n\n**EVIDENCE QUALITY:** [Brief assessment]"
+                try:
+                    result = await literature_scout_agent.run(prompt)
+                    text = result.text
+                except Exception as e:
+                    text = f'Error from Agent: {e!r}'
+                
+                msg = new_agent_text_message(
+                    text,
+                    context_id=context.context_id,
+                    task_id=context.task_id,
+                )
+                await event_queue.enqueue_event(msg)
+            
+            async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
+                msg = new_agent_text_message('Cancellation not supported in this demo.', context_id=context.context_id)
+                await event_queue.enqueue_event(msg)
+        
+        # Build AgentCard
+        medical_affairs_skills = [
+            AgentSkill(
+                id='literature_search',
+                name='Literature Search & Retrieval',
+                description='Searches PubMed, clinical trial registries, and product labeling for evidence-based medical information.',
+                tags=['pubmed', 'literature', 'clinical trials', 'evidence', 'labeling'],
+            ),
+            AgentSkill(
+                id='evidence_grading',
+                name='Evidence Quality Assessment',
+                description='Evaluates study quality, assigns evidence grades (GRADE methodology), and ranks by relevance.',
+                tags=['evidence grading', 'GRADE', 'study quality', 'systematic review'],
+            ),
+            AgentSkill(
+                id='dosing_guidance',
+                name='Dosing & Safety Guidance',
+                description='Provides on-label dosing recommendations, contraindications, and safety information from approved labeling.',
+                tags=['dosing', 'safety', 'contraindications', 'prescribing information', 'renal', 'hepatic'],
+            ),
+            AgentSkill(
+                id='citation_formatting',
+                name='Medical Citation Formatting',
+                description='Formats scientific citations in standard medical formats (AMA, Vancouver) with proper attribution.',
+                tags=['citations', 'references', 'bibliography', 'AMA style'],
+            ),
+        ]
+        
+        agent_card = AgentCard(
+            name='Medical Affairs Literature Scout',
+            description='AI agent for pharmaceutical Medical Affairs teams: searches literature, retrieves evidence, and provides structured medical information responses.',
+            capabilities=AgentCapabilities(streaming=True),
+            url=A2A_BASE + '/',
+            version='2.0.0',
+            defaultInputModes=['text'],
+            defaultOutputModes=['text'],
+            skills=medical_affairs_skills,
+            supportsAuthenticatedExtendedCard=False,
+        )
+        
+        # Build A2A server app
+        request_handler = DefaultRequestHandler(
+            agent_executor=LiteratureScoutAgentExecutor(),
+            task_store=InMemoryTaskStore(),
+        )
+        server_app = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
+        
+        app = FastAPI()
+        
+        require_token = 'A2A_TOKEN' in os.environ
+        def _check_auth(req: Request):
+            if not require_token:
+                return
+            token = os.environ['A2A_TOKEN']
+            auth = req.headers.get('Authorization') or req.headers.get('authorization')
+            if not auth or not auth.startswith('Bearer ') or auth.split(' ',1)[1] != token:
+                raise HTTPException(status_code=401, detail='Invalid or missing bearer token')
+        
+        @app.middleware('http')
+        async def bearer_guard(request: Request, call_next):
+            if request.url.path.startswith('/a2a') and require_token:
+                _check_auth(request)
+            return await call_next(request)
+        
+        app.mount('/', server_app.build())
+        
+        # Start server in background thread
+        config = uvicorn.Config(app=app, host=A2A_HOST, port=A2A_PORT, log_level='warning')
+        uvicorn_server = uvicorn.Server(config=config)
+        
+        def _run_server():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            loop = asyncio.get_event_loop()
+            loop.create_task(uvicorn_server.serve())
+            loop.run_forever()
+        
+        server_thread = threading.Thread(target=_run_server, daemon=True)
+        server_thread.start()
+        time.sleep(2)  # Give server time to start
+        
+        # Verify server started
+        if is_port_in_use(A2A_PORT):
+            print(f"✅ A2A Literature Scout server started successfully on port {A2A_PORT}")
+            print(f"   AgentCard: {A2A_BASE}/.well-known/agent.json")
+            return True
+        else:
+            print(f"❌ Failed to start A2A server on port {A2A_PORT}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error starting A2A server: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 # Initialize CRM with persistent storage
 crm = MedicalCRMIntegration()
 
@@ -1066,6 +1267,43 @@ Response:"""
         risk_icons = {"LOW": "✅", "MEDIUM": "⚠️", "HIGH": "🚨", "UNKNOWN": "❓"}
         status_placeholder.success(f"{risk_icons.get(risk_level, '❓')} **Step 4/4:** Compliance validation complete - Risk Level: {risk_level}")
     
+    # Step 5: Evaluate response quality (optional, requires azure-ai-evaluation)
+    try:
+        from ai_foundry.ai_foundry_evaluation import evaluate_response
+        
+        if status_placeholder:
+            status_placeholder.info("🔄 **Step 5/5:** Evaluating response quality with Azure AI Foundry...")
+        
+        evaluation_results = await evaluate_response(
+            query=query,
+            response=results["mi_response"],
+            context=results["evidence"]
+        )
+        
+        results["evaluation"] = evaluation_results
+        
+        # Debug: Log evaluation results structure
+        print(f"[DEBUG] Evaluation results keys: {list(evaluation_results.keys())}")
+        print(f"[DEBUG] Evaluation results: {evaluation_results}")
+        print(f"[DEBUG] Evaluation has error: {evaluation_results.get('error')}")
+        
+        if status_placeholder and not evaluation_results.get("error"):
+            # Show key metrics
+            metrics_summary = []
+            if "groundedness" in evaluation_results:
+                metrics_summary.append(f"Groundedness: {evaluation_results['groundedness'].get('score', 'N/A')}")
+            if "relevance" in evaluation_results:
+                metrics_summary.append(f"Relevance: {evaluation_results['relevance'].get('score', 'N/A')}")
+            
+            metrics_str = " | ".join(metrics_summary) if metrics_summary else "Metrics computed"
+            status_placeholder.success(f"✅ **Step 5/5:** Quality evaluation complete - {metrics_str}")
+    except Exception as e:
+        # Evaluation is optional - continue without it
+        results["evaluation"] = {"error": str(e), "note": "Evaluation unavailable"}
+        print(f"[DEBUG] Evaluation error: {e}")
+        if status_placeholder:
+            status_placeholder.warning(f"⚠️ **Step 5/5:** Quality evaluation skipped - {str(e)[:100]}")
+    
     return results
 
 def add_to_history(entry: dict):
@@ -1118,6 +1356,66 @@ def display_compliance_result(compliance: dict):
             st.write("**Recommendations:**")
             for rec in compliance['recommendations']:
                 st.write(f"• {rec}")
+
+def display_evaluation_results(evaluation: dict):
+    """Display Azure AI Foundry evaluation results"""
+    if evaluation.get("error"):
+        with st.expander("⚠️ Evaluation Error (Click to expand)", expanded=False):
+            st.warning(f"**Error:** {evaluation.get('error', 'Unknown error')}")
+            st.caption(f"Note: {evaluation.get('note', 'Evaluation is optional')}")
+            st.markdown("""
+            **Troubleshooting:**
+            - Ensure `azure-ai-evaluation` package is installed: `pip install azure-ai-evaluation`
+            - Check `.env` file has: `AI_FOUNDRY_PROJECT_ENDPOINT`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`
+            - View debug console for detailed error messages
+            """)
+        return
+    
+    st.subheader("📊 Azure AI Foundry Quality Evaluation")
+    
+    # Create metrics columns
+    metrics = []
+    if "groundedness" in evaluation:
+        # The evaluator returns the score with the metric name as key
+        score = evaluation["groundedness"].get("groundedness", evaluation["groundedness"].get("score", "N/A"))
+        metrics.append(("Groundedness", score))
+    if "relevance" in evaluation:
+        score = evaluation["relevance"].get("relevance", evaluation["relevance"].get("score", "N/A"))
+        metrics.append(("Relevance", score))
+    if "coherence" in evaluation:
+        score = evaluation["coherence"].get("coherence", evaluation["coherence"].get("score", "N/A"))
+        metrics.append(("Coherence", score))
+    if "fluency" in evaluation:
+        score = evaluation["fluency"].get("fluency", evaluation["fluency"].get("score", "N/A"))
+        metrics.append(("Fluency", score))
+    
+    # Display metrics in columns
+    if metrics:
+        cols = st.columns(len(metrics))
+        for idx, (metric_name, score) in enumerate(metrics):
+            with cols[idx]:
+                # Color-code based on score
+                if isinstance(score, (int, float)):
+                    if score >= 4.0:
+                        color = "green"
+                        emoji = "✅"
+                    elif score >= 3.0:
+                        color = "orange"
+                        emoji = "⚠️"
+                    else:
+                        color = "red"
+                        emoji = "❌"
+                    st.metric(
+                        label=f"{emoji} {metric_name}",
+                        value=f"{score:.2f}/5.0"
+                    )
+                else:
+                    st.metric(label=metric_name, value=str(score))
+        
+        st.caption("📈 Scores range from 1-5 (higher is better) | Evaluated by Azure AI Foundry")
+        st.caption("🔗 View detailed evaluation results in the AI Foundry Portal → Tracing")
+    else:
+        st.info("No evaluation metrics available")
 
 def display_unified_assessment(grade_assessment, compliance_result):
     """Display unified GRADE + Compliance assessment in a single table"""
@@ -1257,14 +1555,244 @@ def display_unified_assessment(grade_assessment, compliance_result):
 # ============================================================================
 
 def main():
+    # Auto-start A2A server on first run
+    if 'a2a_server_started' not in st.session_state:
+        with st.spinner("🚀 Starting A2A Literature Scout server..."):
+            server_started = start_a2a_server_if_needed()
+            st.session_state.a2a_server_started = server_started
+            if server_started:
+                st.success("✅ A2A server is ready!", icon="✅")
+            else:
+                st.warning("⚠️ A2A server could not start automatically. Please start it manually from the notebook.", icon="⚠️")
+    
+    # Setup tracing on first run
+    if 'tracing_setup' not in st.session_state:
+        try:
+            from ai_foundry.ai_foundry_tracing import setup_tracing
+            import sys
+            from io import StringIO
+            
+            # Capture setup output
+            old_stdout = sys.stdout
+            sys.stdout = captured_output = StringIO()
+            
+            setup_tracing()  # Auto-configures from .env file
+            
+            sys.stdout = old_stdout
+            setup_message = captured_output.getvalue()
+            
+            st.session_state.tracing_setup = True
+            st.session_state.tracing_enabled = "✅" in setup_message or "enabled" in setup_message.lower()
+            st.session_state.tracing_message = setup_message.strip()
+            
+            # Debug: Check environment variables
+            st.session_state.tracing_debug = {
+                "has_ai_foundry_endpoint": bool(os.getenv('AI_FOUNDRY_PROJECT_ENDPOINT')),
+                "has_app_insights": bool(os.getenv('APPLICATIONINSIGHTS_CONNECTION_STRING')),
+                "setup_output": setup_message
+            }
+        except Exception as e:
+            st.session_state.tracing_setup = True
+            st.session_state.tracing_enabled = False
+            st.session_state.tracing_error = str(e)
+            st.session_state.tracing_debug = {"error": str(e)}
+    
+    # Setup evaluation on first run
+    if 'evaluation_setup' not in st.session_state:
+        try:
+            from ai_foundry.ai_foundry_evaluation import setup_evaluation
+            import sys
+            from io import StringIO
+            
+            # Capture setup output
+            old_stdout = sys.stdout
+            sys.stdout = captured_output = StringIO()
+            
+            setup_evaluation()  # Auto-configures from .env file
+            
+            sys.stdout = old_stdout
+            setup_message = captured_output.getvalue()
+            
+            st.session_state.evaluation_setup = True
+            st.session_state.evaluation_enabled = "✅" in setup_message or "enabled" in setup_message.lower()
+            st.session_state.evaluation_message = setup_message.strip()
+            
+            print(f"[DEBUG] Evaluation setup complete: {setup_message}")
+        except Exception as e:
+            st.session_state.evaluation_setup = True
+            st.session_state.evaluation_enabled = False
+            st.session_state.evaluation_error = str(e)
+            print(f"[DEBUG] Evaluation setup failed: {e}")
+
+    
+    # Check if agents are already registered
+    if 'agents_registered' not in st.session_state:
+        from pathlib import Path
+        registration_file = Path(__file__).parent / "ai_foundry" / "azure_agent_registration.json"
+        st.session_state.agents_registered = registration_file.exists()
+    
     # Header
     st.markdown('<p class="main-header">🏥 Medical Affairs AI Assistant</p>', unsafe_allow_html=True)
     st.markdown("**Multi-Agent System for Evidence Synthesis & Compliant Response Generation**")
+    
+    # Azure AI Foundry Management Section
+    col1, col2, col3 = st.columns([2, 2, 6])
+    
+    with col1:
+        st.markdown("#### 🤖 Agent Status")
+        
+        # Show A2A agent status
+        if st.session_state.get('a2a_server_started', False):
+            st.success("✅ A2A Literature Scout")
+            st.caption("Running on port 9099")
+            st.markdown(f"[AgentCard](http://127.0.0.1:9099/.well-known/agent.json)")
+        else:
+            st.error("❌ A2A Server Not Running")
+            if st.button("🔄 Retry Server Start"):
+                with st.spinner("Starting server..."):
+                    server_started = start_a2a_server_if_needed()
+                    st.session_state.a2a_server_started = server_started
+                    if server_started:
+                        st.success("✅ Server started!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Server failed to start")
+        
+        st.markdown("---")
+        st.caption("💡 **Note:** Agents communicate via A2A protocol")
+        st.caption("Cloud registration enables tracing in Azure AI Foundry")
+
+        # Registration button
+        if st.button("📡 Register Agents in AI Foundry", help="Register agents in Azure AI Foundry portal"):
+            with st.spinner("Registering agents..."):
+                try:
+                    # Run registration script
+                    import subprocess
+                    from pathlib import Path
+                    
+                    script_dir = Path(__file__).parent.parent
+                    result = subprocess.run(
+                        ["python", "agent-framework/ai_foundry/register_agents_ai_foundry.py"],
+                        capture_output=True,
+                        text=True,
+                        cwd=str(script_dir)
+                    )
+                    
+                    if result.returncode == 0:
+                        st.success("✅ Agents registered successfully!")
+                        with st.expander("📋 Registration Details"):
+                            st.code(result.stdout, language="text")
+                        st.session_state.agents_registered = True
+                    else:
+                        st.error(f"❌ Registration failed: {result.stderr}")
+                        with st.expander("🔍 Error Details"):
+                            st.code(result.stderr, language="text")
+                except Exception as e:
+                    st.error(f"❌ Registration failed: {str(e)}")
+
+
+    
+    with col2:
+        # Tracing status indicator
+        if st.session_state.get('tracing_enabled', False):
+            st.success("🟢 Tracing: Enabled")
+            st.caption("Traces → Azure AI Foundry")
+            if st.button("🔍 Debug Tracing"):
+                with st.expander("Tracing Debug Info", expanded=True):
+                    st.json(st.session_state.get('tracing_debug', {}))
+                    st.code(st.session_state.get('tracing_message', 'No output'))
+        else:
+            st.warning("🟡 Tracing: Disabled")
+            error_msg = st.session_state.get('tracing_error', 'Missing credentials')
+            st.caption(f"{error_msg[:50]}...")
+            if st.button("🔍 Debug Tracing"):
+                with st.expander("Tracing Debug Info", expanded=True):
+                    st.json(st.session_state.get('tracing_debug', {}))
+                    st.markdown("""
+                    **To enable tracing, add to `.env` file:**
+                    ```bash
+                    AI_FOUNDRY_PROJECT_ENDPOINT=https://your-project.services.ai.azure.com/api/projects/your-project
+                    APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...
+                    ```
+                    """)
+        
+        st.markdown("---")
+        
+        # Evaluation status indicator
+        if st.session_state.get('evaluation_enabled', False):
+            st.success("🟢 Evaluation: Enabled")
+            st.caption("Quality metrics available")
+            if st.button("🔍 Debug Evaluation"):
+                with st.expander("Evaluation Debug Info", expanded=True):
+                    st.code(st.session_state.get('evaluation_message', 'No output'))
+        else:
+            st.warning("🟡 Evaluation: Disabled")
+            error_msg = st.session_state.get('evaluation_error', 'Missing credentials')
+            st.caption(f"{error_msg[:50]}...")
+            if st.button("🔍 Debug Evaluation"):
+                with st.expander("Evaluation Debug Info", expanded=True):
+                    st.text(st.session_state.get('evaluation_error', 'Unknown error'))
+                    st.markdown("""
+                    **To enable evaluation, ensure `.env` file has:**
+                    ```bash
+                    AI_FOUNDRY_PROJECT_ENDPOINT=https://your-project.services.ai.azure.com/
+                    AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com/
+                    AZURE_OPENAI_API_KEY=your-key
+                    AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment
+                    AZURE_OPENAI_API_VERSION=2025-01-01-preview
+                    ```
+                    
+                    **Also install:** `pip install azure-ai-evaluation`
+                    """)
+    
+    with col3:
+        if st.session_state.get('agents_registered', False) or st.session_state.get('tracing_enabled', False):
+            project_name = os.getenv('AZURE_AI_PROJECT_NAME', 'ai-nistewart1994ai47121-project')
+            # Direct link to AI Foundry tracing page
+            foundry_url = f"https://ai.azure.com/build/tracing?wsid=/subscriptions/{os.getenv('AZURE_SUBSCRIPTION_ID')}/resourceGroups/{os.getenv('AZURE_RESOURCE_GROUP')}/providers/Microsoft.MachineLearningServices/workspaces/{project_name}"
+            st.markdown(f"[🔗 View Traces in AI Foundry]({foundry_url})")
+    
     st.divider()
     
     # Sidebar - Configuration
     with st.sidebar:
         st.header("⚙️ Configuration")
+        
+        # Auto-configure from environment variables on first run
+        if not st.session_state.get('auto_config_checked', False):
+            env_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            env_key = os.getenv("AZURE_OPENAI_API_KEY")
+            env_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+            env_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+            
+            if env_endpoint and env_key and env_deployment:
+                st.session_state.azure_endpoint = env_endpoint
+                st.session_state.azure_key = env_key
+                st.session_state.deployment_name = env_deployment
+                st.session_state.api_version = env_api_version
+                st.session_state.azure_configured = True
+                st.session_state.a2a_base = f"http://127.0.0.1:9099"
+                st.session_state.a2a_configured = True
+                st.info("✅ Auto-configured from .env file!", icon="ℹ️")
+            
+            st.session_state.auto_config_checked = True
+        
+        # A2A Server Status
+        if st.session_state.get('a2a_server_started', False):
+            st.success("🟢 A2A Server: Running", icon="✅")
+        else:
+            st.error("🔴 A2A Server: Not Running", icon="❌")
+            if st.button("🔄 Retry Server Start"):
+                with st.spinner("Starting server..."):
+                    server_started = start_a2a_server_if_needed()
+                    st.session_state.a2a_server_started = server_started
+                    if server_started:
+                        st.success("✅ Server started!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Server failed to start")
+        
+        st.divider()
         
         # Azure OpenAI Configuration
         with st.expander("🔐 Azure OpenAI Settings", expanded=not st.session_state.azure_configured):
@@ -1530,12 +2058,15 @@ def main():
         
         if st.button("▶️ Run Full Workflow", type="primary", use_container_width=True):
             if mi_query:
-                # Create placeholder for real-time A2A status updates
-                status_placeholder = st.empty()
+                # Create container for workflow progress
+                progress_container = st.container()
                 
                 try:
-                    # Run full workflow with real-time status updates
-                    status_placeholder.info("🌟 **Initializing multi-agent workflow...**")
+                    # Run full workflow with progress container
+                    with progress_container:
+                        st.info("🌟 **Initializing multi-agent workflow...**")
+                        status_placeholder = st.empty()
+                    
                     results = asyncio.run(run_full_mi_workflow(
                         mi_query,
                         st.session_state.a2a_base,
@@ -1544,7 +2075,8 @@ def main():
                         a2a_log_container=st.container()
                     ))
                     
-                    status_placeholder.success("🎉 **All agents completed! Workflow successful.**")
+                    with progress_container:
+                        status_placeholder.success("🎉 **All agents completed! Workflow successful.**")
                     
                     # Store results in session state
                     st.session_state.workflow_results = results
@@ -1588,6 +2120,11 @@ def main():
                 results.get("grade_assessment"),
                 results["compliance"]
             )
+            
+            # Azure AI Foundry Evaluation (always display, function handles errors)
+            if results.get("evaluation"):
+                st.divider()
+                display_evaluation_results(results["evaluation"])
             
             # Summary
             st.divider()
