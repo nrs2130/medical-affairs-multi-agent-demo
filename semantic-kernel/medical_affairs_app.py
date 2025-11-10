@@ -1417,10 +1417,14 @@ def display_evaluation_results(evaluation: dict):
     else:
         st.info("No evaluation metrics available")
 
-def display_unified_assessment(grade_assessment, compliance_result):
+def display_unified_assessment(grade_assessment, compliance_result, grade_error=None):
     """Display unified GRADE + Compliance assessment in a single table"""
     
     st.subheader("📊 Unified Quality & Compliance Assessment")
+    
+    # Debug: Show error if GRADE failed
+    if grade_error and not grade_assessment:
+        st.warning(f"⚠️ GRADE Assessment Error: {grade_error}")
     
     # Prepare GRADE data
     if grade_assessment:
@@ -1670,12 +1674,11 @@ def main():
                     import subprocess
                     from pathlib import Path
                     
-                    script_dir = Path(__file__).parent.parent
+                    script_path = Path(__file__).parent / "ai_foundry" / "register_agents_ai_foundry.py"
                     result = subprocess.run(
-                        ["python", "agent-framework/ai_foundry/register_agents_ai_foundry.py"],
+                        ["python", str(script_path)],
                         capture_output=True,
-                        text=True,
-                        cwd=str(script_dir)
+                        text=True
                     )
                     
                     if result.returncode == 0:
@@ -2118,7 +2121,8 @@ def main():
             st.divider()
             display_unified_assessment(
                 results.get("grade_assessment"),
-                results["compliance"]
+                results["compliance"],
+                results.get("grade_error")
             )
             
             # Azure AI Foundry Evaluation (always display, function handles errors)

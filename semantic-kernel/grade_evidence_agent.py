@@ -26,6 +26,7 @@ Factors that RAISE quality:
 3. All plausible confounding would reduce demonstrated effect
 """
 
+import json
 from typing import Dict, List, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -49,13 +50,18 @@ class StudyDesign(Enum):
 @dataclass
 class GRADEAssessment:
     """Result of GRADE evidence assessment"""
-    initial_quality: EvidenceQuality
-    final_quality: EvidenceQuality
+    initial_quality: str
+    final_quality: str
     downgrades: List[str]
     upgrades: List[str]
     certainty_rating: str
     evidence_summary: str
     recommendation_strength: str
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        from dataclasses import asdict
+        return asdict(self)
 
 
 class GRADEEvidenceAgent:
@@ -100,13 +106,13 @@ class GRADEEvidenceAgent:
         
         # Determine initial quality based on study design
         if "rct" in study_design.lower() or "randomized" in study_design.lower():
-            initial_quality = EvidenceQuality.HIGH
+            initial_quality = "HIGH"
             design_type = "Randomized Controlled Trial"
         elif "observational" in study_design.lower() or "cohort" in study_design.lower() or "case-control" in study_design.lower():
-            initial_quality = EvidenceQuality.LOW
+            initial_quality = "LOW"
             design_type = "Observational Study"
         else:
-            initial_quality = EvidenceQuality.VERY_LOW
+            initial_quality = "VERY_LOW"
             design_type = "Case Series/Report"
         
         # Track downgrades and upgrades
@@ -156,7 +162,7 @@ class GRADEEvidenceAgent:
         # FACTORS THAT RAISE QUALITY (only for observational studies)
         # ====================================================================
         
-        if initial_quality in [EvidenceQuality.LOW, EvidenceQuality.VERY_LOW]:
+        if initial_quality in ["LOW", "VERY_LOW"]:
             
             # 1. Large magnitude of effect
             if effect_size is not None:
@@ -207,41 +213,41 @@ class GRADEEvidenceAgent:
         self.assessment_history.append(assessment)
         return assessment
     
-    def _quality_to_score(self, quality: EvidenceQuality) -> int:
+    def _quality_to_score(self, quality: str) -> int:
         """Convert quality level to numeric score"""
         mapping = {
-            EvidenceQuality.HIGH: 4,
-            EvidenceQuality.MODERATE: 3,
-            EvidenceQuality.LOW: 2,
-            EvidenceQuality.VERY_LOW: 1
+            "HIGH": 4,
+            "MODERATE": 3,
+            "LOW": 2,
+            "VERY_LOW": 1
         }
-        return mapping[quality]
+        return mapping.get(quality, 1)
     
-    def _score_to_quality(self, score: int) -> EvidenceQuality:
+    def _score_to_quality(self, score: int) -> str:
         """Convert numeric score to quality level"""
         if score >= 4:
-            return EvidenceQuality.HIGH
+            return "HIGH"
         elif score == 3:
-            return EvidenceQuality.MODERATE
+            return "MODERATE"
         elif score == 2:
-            return EvidenceQuality.LOW
+            return "LOW"
         else:
-            return EvidenceQuality.VERY_LOW
+            return "VERY_LOW"
     
-    def _generate_certainty_explanation(self, quality: EvidenceQuality) -> str:
+    def _generate_certainty_explanation(self, quality: str) -> str:
         """Generate explanation of certainty level"""
         explanations = {
-            EvidenceQuality.HIGH: "High certainty: We are very confident that the true effect lies close to that of the estimate of the effect.",
-            EvidenceQuality.MODERATE: "Moderate certainty: We are moderately confident in the effect estimate; the true effect is likely to be close to the estimate of the effect, but there is a possibility that it is substantially different.",
-            EvidenceQuality.LOW: "Low certainty: Our confidence in the effect estimate is limited; the true effect may be substantially different from the estimate of the effect.",
-            EvidenceQuality.VERY_LOW: "Very low certainty: We have very little confidence in the effect estimate; the true effect is likely to be substantially different from the estimate of effect."
+            "HIGH": "High certainty: We are very confident that the true effect lies close to that of the estimate of the effect.",
+            "MODERATE": "Moderate certainty: We are moderately confident in the effect estimate; the true effect is likely to be close to the estimate of the effect, but there is a possibility that it is substantially different.",
+            "LOW": "Low certainty: Our confidence in the effect estimate is limited; the true effect may be substantially different from the estimate of the effect.",
+            "VERY_LOW": "Very low certainty: We have very little confidence in the effect estimate; the true effect is likely to be substantially different from the estimate of effect."
         }
-        return explanations[quality]
+        return explanations.get(quality, explanations["VERY_LOW"])
     
     def _generate_evidence_summary(self, design_type: str, sample_size: int,
                                    effect_size: float, ci: tuple,
                                    downgrades: List[str], upgrades: List[str],
-                                   initial: EvidenceQuality, final: EvidenceQuality) -> str:
+                                   initial: str, final: str) -> str:
         """Generate comprehensive evidence summary with detailed rationale"""
         
         summary = "**GRADE EVIDENCE QUALITY ASSESSMENT**\n"
@@ -257,7 +263,7 @@ class GRADEEvidenceAgent:
             summary += f"**Effect Estimate:** RR = {effect_size:.2f}\n"
         
         # Initial quality with explanation
-        summary += f"\n**Initial GRADE Quality:** {initial.value}\n"
+        summary += f"\n**Initial GRADE Quality:** {initial}\n"
         summary += f"*Rationale: {self._get_initial_quality_rationale(design_type)}*\n"
         
         # Quality adjustments
@@ -281,15 +287,15 @@ class GRADEEvidenceAgent:
         
         # Final quality with visual indicator
         quality_change = ""
-        if final.value != initial.value:
+        if final != initial:
             if self._quality_to_score(final) > self._quality_to_score(initial):
-                quality_change = f" (↑ from {initial.value})"
+                quality_change = f" (↑ from {initial})"
             else:
-                quality_change = f" (↓ from {initial.value})"
+                quality_change = f" (↓ from {initial})"
         else:
             quality_change = " (unchanged)"
         
-        summary += f"\n**Final GRADE Quality:** {final.value}{quality_change}\n"
+        summary += f"\n**Final GRADE Quality:** {final}{quality_change}\n"
         
         # Add interpretation
         summary += f"\n**What This Means:**\n"
@@ -306,33 +312,33 @@ class GRADEEvidenceAgent:
         }
         return rationales.get(design_type, "Study design determines initial quality level per GRADE methodology")
     
-    def _generate_quality_interpretation(self, quality: EvidenceQuality, downgrades: int, upgrades: int) -> str:
+    def _generate_quality_interpretation(self, quality: str, downgrades: int, upgrades: int) -> str:
         """Generate plain-language interpretation of the GRADE rating"""
         
         interpretations = {
-            EvidenceQuality.HIGH: (
+            "HIGH": (
                 "The evidence is of HIGH quality. We can be very confident that the true effect "
                 "is close to what the study found. Further research is very unlikely to change "
                 "our confidence in the estimate of effect."
             ),
-            EvidenceQuality.MODERATE: (
+            "MODERATE": (
                 "The evidence is of MODERATE quality. We are moderately confident in the effect estimate. "
                 "The true effect is likely close to the estimate, but there is a possibility it could be "
                 "substantially different. Further research may have an important impact on our confidence."
             ),
-            EvidenceQuality.LOW: (
+            "LOW": (
                 "The evidence is of LOW quality. Our confidence in the effect estimate is limited. "
                 "The true effect may be substantially different from the estimate. Further research is "
                 "very likely to have an important impact on our confidence and may change the estimate."
             ),
-            EvidenceQuality.VERY_LOW: (
+            "VERY_LOW": (
                 "The evidence is of VERY LOW quality. We have very little confidence in the effect estimate. "
                 "The true effect is likely to be substantially different from the estimate. Any estimate "
                 "of effect is very uncertain and should be interpreted with extreme caution."
             )
         }
         
-        interpretation = interpretations[quality]
+        interpretation = interpretations.get(quality, interpretations["VERY_LOW"])
         
         # Add context about adjustments
         if downgrades > 0 and upgrades > 0:
@@ -347,23 +353,23 @@ class GRADEEvidenceAgent:
         
         return interpretation
     
-    def _determine_recommendation_strength(self, quality: EvidenceQuality, 
+    def _determine_recommendation_strength(self, quality: str, 
                                           effect_size: float = None) -> str:
         """Determine strength of recommendation based on GRADE"""
         
-        if quality == EvidenceQuality.HIGH:
+        if quality == "HIGH":
             if effect_size and effect_size >= 2.0:
                 return "STRONG recommendation - High quality evidence, large effect"
             else:
                 return "STRONG recommendation - High quality evidence"
         
-        elif quality == EvidenceQuality.MODERATE:
+        elif quality == "MODERATE":
             if effect_size and effect_size >= 2.0:
                 return "STRONG recommendation - Moderate quality evidence, large effect"
             else:
                 return "CONDITIONAL recommendation - Moderate quality evidence"
         
-        elif quality == EvidenceQuality.LOW:
+        elif quality == "LOW":
             return "CONDITIONAL recommendation - Low quality evidence"
         
         else:  # VERY_LOW
@@ -376,7 +382,7 @@ class GRADEEvidenceAgent:
         table += "|---------|-----------|-------------------------|\n"
         
         for assessment in assessments:
-            table += f"| {assessment.final_quality.value} | "
+            table += f"| {assessment.final_quality} | "
             table += f"{assessment.certainty_rating[:50]}... | "
             table += f"{assessment.recommendation_strength} |\n"
         
@@ -506,3 +512,55 @@ if __name__ == "__main__":
     print(f"\n{assessment3.recommendation_strength}\n")
     
     print("=" * 80)
+
+
+# ============================================================================
+# Standalone Function for Compatibility with medical_affairs_app.py
+# ============================================================================
+
+def assess_grade_evidence(
+    study_design: str,
+    sample_size: int,
+    effect_size: float = None,
+    confidence_interval_lower: float = None,
+    confidence_interval_upper: float = None,
+    risk_of_bias: str = "low",
+    consistency: str = "consistent",
+    directness: str = "direct",
+    precision: str = "precise",
+    publication_bias_likely: bool = False,
+    dose_response: bool = False,
+    confounding_reduces_effect: bool = False
+) -> str:
+    """
+    Standalone function wrapper for GRADE assessment.
+    Creates a GRADEEvidenceAgent instance and performs the assessment.
+    
+    Returns:
+        JSON string representation of the GRADEAssessment
+    """
+    # Create agent instance
+    agent = GRADEEvidenceAgent()
+    
+    # Convert confidence interval to tuple if bounds provided
+    confidence_interval = None
+    if confidence_interval_lower is not None and confidence_interval_upper is not None:
+        confidence_interval = (confidence_interval_lower, confidence_interval_upper)
+    
+    # Perform assessment
+    assessment = agent.assess_evidence(
+        study_design=study_design,
+        sample_size=sample_size,
+        effect_size=effect_size,
+        confidence_interval=confidence_interval,
+        risk_of_bias=risk_of_bias,
+        consistency=consistency,
+        directness=directness,
+        precision=precision,
+        publication_bias_likely=publication_bias_likely,
+        dose_response=dose_response,
+        confounding_reduces_effect=confounding_reduces_effect
+    )
+    
+    # Convert to JSON string
+    return json.dumps(assessment.to_dict(), indent=2)
