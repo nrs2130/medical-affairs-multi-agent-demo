@@ -21,9 +21,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Azure AI Foundry Configuration
-ENDPOINT = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "").rstrip("/")
+# Using AI_FOUNDRY_PROJECT_ENDPOINT which already includes /api/projects/<project_name>
+ENDPOINT = os.getenv("AI_FOUNDRY_PROJECT_ENDPOINT", "").rstrip("/")
 API_KEY = os.getenv("AZURE_AI_PROJECT_KEY", "")
-PROJECT_NAME = os.getenv("AZURE_AI_PROJECT_NAME", "")
+AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
 
 # Validate configuration
 if not ENDPOINT or not API_KEY:
@@ -45,7 +46,7 @@ MEDICAL_AFFAIRS_AGENTS = [
     {
         "name": "Literature Scout Agent",
         "description": "Searches PubMed, clinical trials, and product labeling for evidence-based medical information. Ranks evidence by quality and recency.",
-        "model": "gpt-4o",
+        "model": AZURE_OPENAI_DEPLOYMENT_NAME,
         "instructions": """You are a Literature Scout Agent for pharmaceutical Medical Affairs.
 
 Your role:
@@ -62,7 +63,7 @@ Always prioritize peer-reviewed research and official regulatory documents.""",
     {
         "name": "MI Orchestrator Agent",
         "description": "Coordinates Medical Information responses, ensures regulatory compliance, and manages multi-agent workflows for complex healthcare professional inquiries.",
-        "model": "gpt-4o",
+        "model": AZURE_OPENAI_DEPLOYMENT_NAME,
         "instructions": """You are an MI Orchestrator Agent managing Medical Information responses.
 
 Your role:
@@ -79,7 +80,7 @@ You must balance scientific accuracy, regulatory compliance, and timely delivery
     {
         "name": "Compliance Guard Agent",
         "description": "Reviews all Medical Information responses for regulatory compliance, flags potential risks, and ensures adherence to FDA, EMA, and company medical governance standards.",
-        "model": "gpt-4o",
+        "model": AZURE_OPENAI_DEPLOYMENT_NAME,
         "instructions": """You are a Compliance Guard Agent for pharmaceutical Medical Affairs.
 
 Your role:
@@ -110,13 +111,13 @@ class AzureAIFoundryClient:
             "api-key": api_key,
             "Content-Type": "application/json"
         }
-        # API version for Azure AI Agent Service
-        self.api_version = "2024-07-01-preview"
+        # API version for Azure AI Foundry Agent Service (GA version)
+        self.api_version = "2025-05-01"
     
     def create_agent(self, agent_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create an agent in Azure AI Foundry."""
-        # Use the OpenAI Assistants API endpoint (Azure AI Foundry compatible)
-        url = f"{self.endpoint}/openai/assistants?api-version={self.api_version}"
+        """Create an agent in Azure AI Foundry Agent Service."""
+        # Use the Azure AI Foundry Agent Service endpoint
+        url = f"{self.endpoint}/assistants?api-version={self.api_version}"
         
         # Prepare agent payload according to Azure AI Agent Service schema
         payload = {
@@ -147,7 +148,7 @@ class AzureAIFoundryClient:
     
     def list_agents(self) -> List[Dict[str, Any]]:
         """List all agents in the project."""
-        url = f"{self.endpoint}/openai/assistants?api-version={self.api_version}"
+        url = f"{self.endpoint}/assistants?api-version={self.api_version}"
         
         try:
             with httpx.Client(timeout=30.0) as client:
@@ -170,7 +171,7 @@ def register_all_agents():
     print("Medical Affairs Multi-Agent System - Azure AI Foundry Registration")
     print("=" * 80)
     print(f"\nEndpoint: {ENDPOINT}")
-    print(f"Project: {PROJECT_NAME}")
+    print(f"Model Used: {AZURE_OPENAI_DEPLOYMENT_NAME}")
     print(f"API Key: {'*' * 20}{API_KEY[-10:] if API_KEY else 'NOT SET'}\n")
     
     # Initialize client
